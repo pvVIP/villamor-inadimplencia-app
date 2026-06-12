@@ -3068,6 +3068,20 @@ textarea:focus {
   background: var(--surface-strong);
 }
 
+[data-theme="dark"] #terminateDialog label {
+  color: #d8dee5;
+}
+
+[data-theme="dark"] #terminateDialog .modal-alert {
+  color: #ff7189;
+  text-shadow: 0 0 12px rgba(255, 79, 110, 0.24);
+}
+
+[data-theme="dark"] #terminateDialog .termination-contract-summary span,
+[data-theme="dark"] #terminateDialog .termination-contract-summary small {
+  color: #cbd2da;
+}
+
 @media (max-width: 1280px) {
   .global-filters {
     grid-template-columns: repeat(3, minmax(0, 1fr));
