@@ -1,6 +1,6 @@
 import { APP_CONFIG } from "./config.js";
-import { Database } from "./database.js?v=20260610-7";
-import { SupabaseProvider } from "./supabase-provider.js?v=20260610-1";
+import { Database } from "./database.js?v=20260611-1";
+import { SupabaseProvider } from "./supabase-provider.js?v=20260611-1";
 
 export function createDataProvider() {
   if (APP_CONFIG.dataProvider === "local") {

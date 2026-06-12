@@ -14,20 +14,22 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20260610-12">
+  <link rel="stylesheet" href="css/style.css?v=20260611-1">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" defer></script>
-  <script src="js/app.js?v=20260610-11" type="module"></script>
+  <script src="js/app.js?v=20260611-1" type="module"></script>
 </head>
 <body>
-  <section class="auth-gate" id="authGate" hidden>
+  <a class="skip-link" href="#mainContent">Ir para o conteúdo principal</a>
+
+  <section class="auth-gate" id="authGate" role="dialog" aria-modal="true" aria-labelledby="authTitle" aria-describedby="authDescription" hidden>
     <div class="auth-panel">
       <img src="assets/logo.png" alt="Villamor" class="auth-logo">
       <div class="auth-heading">
         <span>ACESSO SEGURO</span>
-        <h1>VILLAMOR INADIMPLÊNCIA</h1>
-        <p>Dados sincronizados para operação e apresentação em qualquer dispositivo.</p>
+        <h1 id="authTitle">VILLAMOR INADIMPLÊNCIA</h1>
+        <p id="authDescription">Dados sincronizados para operação e apresentação em qualquer dispositivo.</p>
       </div>
       <form id="authForm" class="auth-form">
         <label id="authNameField" hidden>
@@ -42,7 +44,7 @@
           Senha
           <input type="password" id="authPassword" autocomplete="current-password" minlength="8" required>
         </label>
-        <p class="auth-message" id="authMessage" role="status"></p>
+        <p class="auth-message" id="authMessage" role="status" aria-live="polite"></p>
         <button class="primary-button auth-submit" id="authSubmitButton" type="submit">Entrar</button>
         <button class="secondary-button auth-mode-button" id="authModeButton" type="button">Criar primeiro acesso</button>
       </form>
@@ -51,7 +53,7 @@
   </section>
 
   <div class="app-shell">
-    <aside class="sidebar">
+    <aside class="sidebar" aria-label="Menu principal">
       <div class="brand">
         <img src="assets/logo.png" alt="Villamor" class="brand-logo">
         <div>
@@ -60,24 +62,24 @@
         </div>
       </div>
       <nav class="nav-tabs" aria-label="Navegação principal">
-        <button class="nav-tab active" data-tab-target="operational">
-          <span class="nav-icon">▦</span>
+        <button class="nav-tab active" id="operationalTab" type="button" data-tab-target="operational" aria-controls="operationalPanel">
+          <span class="nav-icon" aria-hidden="true">▦</span>
           Operacionalização
         </button>
-        <button class="nav-tab" data-tab-target="terminations">
-          <span class="nav-icon">×</span>
+        <button class="nav-tab" id="terminationsTab" type="button" data-tab-target="terminations" aria-controls="terminationsPanel">
+          <span class="nav-icon" aria-hidden="true">×</span>
           Distratos
         </button>
-        <button class="nav-tab" data-tab-target="reversions">
-          <span class="nav-icon">↺</span>
+        <button class="nav-tab" id="reversionsTab" type="button" data-tab-target="reversions" aria-controls="reversionsPanel">
+          <span class="nav-icon" aria-hidden="true">↺</span>
           Reversões
         </button>
-        <button class="nav-tab" data-tab-target="health">
-          <span class="nav-icon">!</span>
+        <button class="nav-tab" id="healthTab" type="button" data-tab-target="health" aria-controls="healthPanel">
+          <span class="nav-icon" aria-hidden="true">!</span>
           Alertas de Dados
         </button>
-        <button class="nav-tab" data-tab-target="executive">
-          <span class="nav-icon">◈</span>
+        <button class="nav-tab" id="executiveTab" type="button" data-tab-target="executive" aria-controls="executivePanel">
+          <span class="nav-icon" aria-hidden="true">◈</span>
           Dashboard Executivo
         </button>
       </nav>
@@ -85,7 +87,7 @@
         <span id="userModeLabel">Usuário local</span>
         <strong id="currentUserLabel">Operador Local</strong>
         <small id="dataModeLabel">Dados neste dispositivo</small>
-        <button class="ghost-button compact" id="changeUserButton">Alterar</button>
+        <button class="ghost-button compact" id="changeUserButton" type="button">Alterar</button>
       </div>
       <div class="sidebar-footer">
         <div class="connection-status" id="connectionStatus" role="status">
@@ -102,22 +104,22 @@
       </div>
     </aside>
 
-    <main class="main">
+    <main class="main" id="mainContent" tabindex="-1">
       <header class="topbar">
         <div>
           <h1>GESTÃO DA INADIMPLÊNCIA - VTR</h1>
         </div>
         <div class="topbar-actions">
-          <button class="secondary-button" id="refreshButton">Recalcular</button>
+          <button class="secondary-button" id="refreshButton" type="button">Recalcular</button>
           <label class="primary-button file-button">
             Atualização
-            <input type="file" id="uploadInput" accept=".xlsx,.xls">
+            <input type="file" id="uploadInput" accept=".xlsx,.xls" aria-label="Selecionar planilha para atualização">
           </label>
-          <button class="primary-button" id="captureButton">Captura</button>
+          <button class="primary-button" id="captureButton" type="button">Captura</button>
         </div>
       </header>
 
-      <section class="global-filters" aria-label="Filtros globais">
+      <section class="global-filters" role="search" aria-label="Filtros globais da carteira">
         <label>
           Busca
           <input type="search" id="globalSearch" placeholder="Cliente, contrato, CPF, produto">
@@ -157,23 +159,23 @@
         </label>
       </section>
 
-      <section class="tab-panel active" id="operationalPanel">
+      <section class="tab-panel active" id="operationalPanel" role="region" aria-labelledby="operationalTab">
         <div class="section-header performance-section-header">
           <div class="performance-meter" id="operationalPerformance"></div>
           <div class="table-actions">
-            <button class="secondary-button" id="clearFiltersButton">Limpar filtros</button>
-            <button class="danger-button" id="bulkTerminateButton">Distratar seleção</button>
+            <button class="secondary-button" id="clearFiltersButton" type="button">Limpar filtros</button>
+            <button class="danger-button" id="bulkTerminateButton" type="button">Distratar seleção</button>
           </div>
         </div>
 
-        <div class="metrics-row" id="operationalKpis"></div>
+        <div class="metrics-row" id="operationalKpis" aria-live="polite"></div>
 
         <div class="table-shell">
           <div class="table-toolbar">
-            <span id="tableSummary">0 contratos</span>
+            <strong id="tableSummary" aria-live="polite">0 contratos</strong>
             <div class="pagination-size">
-              <span>Linhas</span>
-              <select id="pageSize">
+              <label for="pageSize">Linhas por página</label>
+              <select id="pageSize" aria-controls="contractsTableBody">
                 <option>10</option>
                 <option selected>25</option>
                 <option>50</option>
@@ -181,58 +183,60 @@
               </select>
             </div>
           </div>
-          <div class="table-scroll">
+          <div class="table-scroll" tabindex="0" aria-labelledby="tableSummary">
             <table class="data-table">
+              <caption class="sr-only">Contratos da carteira conforme os filtros aplicados</caption>
               <thead>
                 <tr>
-                  <th><input type="checkbox" id="selectAllRows"></th>
-                  <th data-sort="contractId">Contrato</th>
-                  <th data-sort="primaryClient">Cliente</th>
-                  <th data-sort="category">Categoria</th>
-                  <th data-sort="product">Grupo</th>
-                  <th data-sort="effectivePaidValue">Integralizado</th>
-                  <th data-sort="overdueValue">Atraso</th>
-                  <th data-sort="daysOverdue">Dias</th>
-                  <th data-sort="appStatus">Status</th>
-                  <th>Observações</th>
-                  <th data-sort="lastUpdatedAt">Atualização</th>
+                  <th scope="col" class="selection-column"><input type="checkbox" id="selectAllRows" aria-label="Selecionar todos os contratos desta página"></th>
+                  <th scope="col" data-sort="contractId"><button class="sort-button" type="button">Contrato</button></th>
+                  <th scope="col" data-sort="primaryClient"><button class="sort-button" type="button">Cliente</button></th>
+                  <th scope="col" data-sort="category"><button class="sort-button" type="button">Categoria</button></th>
+                  <th scope="col" data-sort="product"><button class="sort-button" type="button">Grupo</button></th>
+                  <th scope="col" data-sort="effectivePaidValue"><button class="sort-button" type="button">Integralizado</button></th>
+                  <th scope="col" data-sort="overdueValue"><button class="sort-button" type="button">Atraso</button></th>
+                  <th scope="col" data-sort="daysOverdue"><button class="sort-button" type="button">Dias</button></th>
+                  <th scope="col" data-sort="appStatus"><button class="sort-button" type="button">Status</button></th>
+                  <th scope="col">Observações</th>
+                  <th scope="col" data-sort="lastUpdatedAt"><button class="sort-button" type="button">Atualização</button></th>
                 </tr>
               </thead>
               <tbody id="contractsTableBody"></tbody>
             </table>
           </div>
-          <div class="pagination">
-            <button class="ghost-button" id="prevPage">Anterior</button>
-            <span id="pageIndicator">Página 1</span>
-            <button class="ghost-button" id="nextPage">Próxima</button>
+          <div class="pagination" aria-label="Paginação da tabela">
+            <button class="ghost-button" id="prevPage" type="button" aria-controls="contractsTableBody">Anterior</button>
+            <span id="pageIndicator" aria-live="polite">Página 1</span>
+            <button class="ghost-button" id="nextPage" type="button" aria-controls="contractsTableBody">Próxima</button>
           </div>
         </div>
 
       </section>
 
-      <section class="tab-panel" id="terminationsPanel">
+      <section class="tab-panel" id="terminationsPanel" role="region" aria-labelledby="terminationsTab">
         <div class="section-header split">
           <div>
             <p class="eyebrow">Produção do setor</p>
             <h2>Distratos lançados a partir de 07/05/2026</h2>
           </div>
-          <span id="terminatedSummary">0 registros</span>
+          <span id="terminatedSummary" aria-live="polite">0 registros</span>
         </div>
         <div class="table-shell compact-table">
-          <div class="table-scroll">
+          <div class="table-scroll" tabindex="0" aria-label="Distratos lançados">
             <table class="data-table">
+              <caption class="sr-only">Distratos lançados a partir de 7 de maio de 2026</caption>
               <thead>
                 <tr>
-                  <th>Contrato</th>
-                  <th>Cliente</th>
-                  <th>Integralizado</th>
-                  <th>Data do distrato</th>
-                  <th>Classificação</th>
-                  <th>Motivo</th>
-                  <th>Valor retido</th>
-                  <th>Reembolso</th>
-                  <th>Responsável</th>
-                  <th>Ação</th>
+                  <th scope="col">Contrato</th>
+                  <th scope="col">Cliente</th>
+                  <th scope="col">Integralizado</th>
+                  <th scope="col">Data do distrato</th>
+                  <th scope="col">Classificação</th>
+                  <th scope="col">Motivo</th>
+                  <th scope="col">Valor retido</th>
+                  <th scope="col">Reembolso</th>
+                  <th scope="col">Responsável</th>
+                  <th scope="col">Ação</th>
                 </tr>
               </thead>
               <tbody id="terminatedTableBody"></tbody>
@@ -245,19 +249,20 @@
             <p class="eyebrow">Histórico importado</p>
             <h2>Outros distratos identificados na base</h2>
           </div>
-          <span id="historicalTerminatedSummary">0 registros</span>
+          <span id="historicalTerminatedSummary" aria-live="polite">0 registros</span>
         </div>
         <div class="table-shell compact-table">
-          <div class="table-scroll">
+          <div class="table-scroll" tabindex="0" aria-label="Histórico de distratos importados">
             <table class="data-table">
+              <caption class="sr-only">Outros distratos identificados na base importada</caption>
               <thead>
                 <tr>
-                  <th>Contrato</th>
-                  <th>Cliente</th>
-                  <th>Integralizado</th>
-                  <th>Data do distrato</th>
-                  <th>Motivo identificado</th>
-                  <th>Origem</th>
+                  <th scope="col">Contrato</th>
+                  <th scope="col">Cliente</th>
+                  <th scope="col">Integralizado</th>
+                  <th scope="col">Data do distrato</th>
+                  <th scope="col">Motivo identificado</th>
+                  <th scope="col">Origem</th>
                 </tr>
               </thead>
               <tbody id="historicalTerminatedTableBody"></tbody>
@@ -266,29 +271,30 @@
         </div>
       </section>
 
-      <section class="tab-panel" id="reversionsPanel">
+      <section class="tab-panel" id="reversionsPanel" role="region" aria-labelledby="reversionsTab">
         <div class="section-header split">
           <div>
             <p class="eyebrow">Histórico contratual</p>
             <h2>Contratos revertidos</h2>
             <p class="section-description">Registros antigos excluídos da carteira ativa e vinculados ao contrato atual quando a origem permite.</p>
           </div>
-          <span id="reversionsSummary">0 registros</span>
+          <span id="reversionsSummary" aria-live="polite">0 registros</span>
         </div>
-        <div class="metrics-row history-metrics" id="reversionKpis"></div>
+        <div class="metrics-row history-metrics" id="reversionKpis" aria-live="polite"></div>
         <div class="table-shell compact-table">
-          <div class="table-scroll">
+          <div class="table-scroll" tabindex="0" aria-label="Contratos revertidos">
             <table class="data-table">
+              <caption class="sr-only">Histórico de contratos revertidos</caption>
               <thead>
                 <tr>
-                  <th>Contrato revertido</th>
-                  <th>Cliente histórico</th>
-                  <th>Origem reversão</th>
-                  <th>Contrato ativo vinculado</th>
-                  <th>Cliente atual</th>
-                  <th>Data reversão</th>
-                  <th>Integralizado</th>
-                  <th>Vínculo</th>
+                  <th scope="col">Contrato revertido</th>
+                  <th scope="col">Cliente histórico</th>
+                  <th scope="col">Origem reversão</th>
+                  <th scope="col">Contrato ativo vinculado</th>
+                  <th scope="col">Cliente atual</th>
+                  <th scope="col">Data reversão</th>
+                  <th scope="col">Integralizado</th>
+                  <th scope="col">Vínculo</th>
                 </tr>
               </thead>
               <tbody id="reversionsTableBody"></tbody>
@@ -297,7 +303,7 @@
         </div>
       </section>
 
-      <section class="tab-panel" id="healthPanel">
+      <section class="tab-panel" id="healthPanel" role="region" aria-labelledby="healthTab">
         <div class="section-header split">
           <div>
             <p class="eyebrow">Governança da informação</p>
@@ -313,12 +319,12 @@
             <div class="health-score-track"><div id="healthScoreFill"></div></div>
             <small id="healthScoreLabel">Base consistente</small>
           </article>
-          <div class="metrics-row health-metrics" id="healthKpis"></div>
+          <div class="metrics-row health-metrics" id="healthKpis" aria-live="polite"></div>
         </div>
-        <div class="health-alerts" id="healthAlerts"></div>
+        <div class="health-alerts" id="healthAlerts" aria-live="polite"></div>
       </section>
 
-      <section class="tab-panel" id="executivePanel">
+      <section class="tab-panel" id="executivePanel" role="region" aria-labelledby="executiveTab">
         <div id="dashboardCaptureArea" class="dashboard-capture-area">
           <div class="section-header performance-section-header">
             <div class="performance-meter" id="executivePerformance"></div>
@@ -326,38 +332,38 @@
           </div>
 
           <div class="executive-brief" id="executiveBrief"></div>
-          <div class="metrics-grid" id="executiveKpis"></div>
+          <div class="metrics-grid" id="executiveKpis" aria-live="polite"></div>
 
           <div class="dashboard-grid">
             <article class="chart-panel wide">
               <div class="panel-header">
                 <h3>Evolução da inadimplência</h3>
               </div>
-              <canvas id="evolutionChart"></canvas>
+              <canvas id="evolutionChart" role="img" aria-label="Gráfico da evolução da inadimplência"></canvas>
             </article>
             <article class="chart-panel">
               <div class="panel-header">
                 <h3>Distribuição por categoria</h3>
               </div>
-              <canvas id="categoryChart"></canvas>
+              <canvas id="categoryChart" role="img" aria-label="Gráfico de distribuição por categoria"></canvas>
             </article>
             <article class="chart-panel">
               <div class="panel-header">
                 <h3>Distribuição financeira</h3>
               </div>
-              <canvas id="donutChart"></canvas>
+              <canvas id="donutChart" role="img" aria-label="Gráfico de distribuição financeira"></canvas>
             </article>
             <article class="chart-panel">
               <div class="panel-header">
                 <h3>Funil operacional</h3>
               </div>
-              <canvas id="funnelChart"></canvas>
+              <canvas id="funnelChart" role="img" aria-label="Gráfico do funil operacional"></canvas>
             </article>
             <article class="chart-panel">
               <div class="panel-header">
                 <h3>Aging list</h3>
               </div>
-              <canvas id="agingChart"></canvas>
+              <canvas id="agingChart" role="img" aria-label="Gráfico de contratos por faixa de atraso"></canvas>
             </article>
             <article class="chart-panel wide">
               <div class="panel-header">
@@ -386,11 +392,10 @@
     </main>
   </div>
 
-  <dialog id="terminateDialog" class="modal">
+  <dialog id="terminateDialog" class="modal" aria-labelledby="terminateDialogTitle" aria-describedby="terminateDialogDescription">
     <form method="dialog" id="terminateForm">
-      <h2>Confirmação</h2>
-      <p class="modal-alert">Tem certeza que deseja distratar este contrato?</p>
-      <p>Esta operação removerá o contrato dos indicadores ativos.</p>
+      <h2 id="terminateDialogTitle">Confirmar distrato</h2>
+      <p class="modal-alert" id="terminateDialogDescription">Esta operação removerá o contrato dos indicadores ativos.</p>
       <label class="termination-date-field">
         Data do distrato
         <input type="date" id="terminationDate">
@@ -407,7 +412,7 @@
       </div>
       <label>
         Motivo do distrato
-        <textarea id="terminationReason" placeholder="Obrigatório apenas para confirmar o distrato"></textarea>
+        <textarea id="terminationReason" placeholder="Informe o motivo do distrato" aria-describedby="terminationReasonError"></textarea>
       </label>
       <div class="financial-switches">
         <div class="financial-switch-block">
@@ -459,8 +464,8 @@
     </form>
   </dialog>
 
-  <dialog id="importDialog" class="modal import-modal">
-    <form method="dialog">
+  <dialog id="importDialog" class="modal import-modal" aria-labelledby="importDialogTitle">
+    <form method="dialog" aria-labelledby="importDialogTitle">
       <h2 id="importDialogTitle">Relatório de atualização</h2>
       <div id="importReport" class="import-report"></div>
       <div class="modal-actions">
@@ -472,7 +477,7 @@
     </form>
   </dialog>
 
-  <div id="toastHost" class="toast-host" aria-live="polite"></div>
+  <div id="toastHost" class="toast-host" role="status" aria-live="polite" aria-atomic="true"></div>
   <div id="contractHoverCard" class="contract-hover-card" role="tooltip" hidden></div>
 </body>
 </html>

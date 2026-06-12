@@ -6,6 +6,11 @@ export class DistratoService {
   }
 
   async terminate(contract, reason, user, financial = {}) {
+    if (typeof this.database.terminateContract === "function") {
+      await this.database.terminateContract(contract.contractId, reason, financial);
+      return;
+    }
+
     const now = todayIso();
     const terminatedAt = financial.terminationDate
       ? `${financial.terminationDate}T12:00:00`
@@ -49,6 +54,11 @@ export class DistratoService {
   }
 
   async restore(contract, user) {
+    if (typeof this.database.restoreContract === "function") {
+      await this.database.restoreContract(contract.contractId);
+      return;
+    }
+
     const restored = {
       ...contract,
       manualStatus: null,
@@ -75,6 +85,11 @@ export class DistratoService {
   }
 
   async updateStatus(contract, nextStatus, user) {
+    if (typeof this.database.updateContractStatus === "function") {
+      await this.database.updateContractStatus(contract.contractId, nextStatus);
+      return;
+    }
+
     const previousStatus = contract.appStatus;
     const updated = {
       ...contract,
@@ -94,6 +109,11 @@ export class DistratoService {
   }
 
   async updateNotes(contract, notes, user) {
+    if (typeof this.database.updateContractNotes === "function") {
+      await this.database.updateContractNotes(contract.contractId, notes);
+      return;
+    }
+
     await this.database.putContract({
       ...contract,
       notes,

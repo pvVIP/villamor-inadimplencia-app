@@ -1,5 +1,5 @@
-import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260610-11";
-import { DistratoService } from "./distratos.js";
+import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260611-1";
+import { DistratoService } from "./distratos.js?v=20260611-1";
 import { parseWorkbookFile } from "./upload.js?v=20260609-4";
 import { renderCharts } from "./charts.js";
 import { generateInsights } from "./insights.js?v=20260609-7";
@@ -143,7 +143,7 @@ function showAuthGate(error) {
   document.querySelector(".app-shell").setAttribute("aria-hidden", "true");
   if (error?.code === "ACCOUNT_PENDING") {
     setAuthMessage("Conta criada, mas ainda aguardando aprovação do administrador.");
-  } else if (error?.code && error.code !== "AUTH_REQUIRED") {
+  } else if (error?.code !== "AUTH_REQUIRED" && error?.message) {
     setAuthMessage(error.message);
   }
   document.getElementById("authEmail").focus();
@@ -203,7 +203,7 @@ function bindEvents() {
   });
 
   document.getElementById("clearFiltersButton").addEventListener("click", clearFilters);
-  document.getElementById("refreshButton").addEventListener("click", () => renderAll());
+  document.getElementById("refreshButton").addEventListener("click", refreshApplicationData);
   document.getElementById("pageSize").addEventListener("change", (event) => {
     state.pageSize = Number(event.target.value);
     state.page = 1;
@@ -252,6 +252,22 @@ function bindEvents() {
   document.getElementById("changeUserButton").addEventListener("click", changeUser);
   document.getElementById("themeToggle").addEventListener("click", toggleTheme);
   document.getElementById("installAppButton").addEventListener("click", installProgressiveWebApp);
+}
+
+async function refreshApplicationData() {
+  const button = document.getElementById("refreshButton");
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = "Atualizando...";
+  try {
+    await reload();
+    toast(db.requiresAuthentication ? "Dados sincronizados novamente." : "Indicadores recalculados.");
+  } catch (error) {
+    toast(`Não foi possível atualizar: ${error.message}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = originalLabel;
+  }
 }
 
 function setupProgressiveWebApp() {
@@ -363,7 +379,10 @@ function populateFilterOptions() {
 function setSelectOptions(id, values, allLabel) {
   const select = document.getElementById(id);
   const currentValue = select.value || "all";
-  select.innerHTML = values.map((value) => `<option value="${escapeAttr(value)}">${value === "all" ? allLabel : value}</option>`).join("");
+  select.innerHTML = values.map((value) => {
+    const label = value === "all" ? allLabel : value;
+    return `<option value="${escapeAttr(value)}">${escapeHtml(label)}</option>`;
+  }).join("");
   select.value = [...select.options].some((option) => option.value === currentValue) ? currentValue : "all";
 }
 
@@ -519,7 +538,7 @@ function renderContractRow(contract) {
   return `
     <tr data-contract-id="${escapeAttr(contract.contractId)}">
       <td><input type="checkbox" class="row-check" ${checked} ${writeDisabled}></td>
-      <td><strong>${contract.contractId}</strong></td>
+      <td><strong>${escapeHtml(contract.contractId)}</strong></td>
       <td class="client-cell">
         <strong class="client-hover-trigger" tabindex="0">${escapeHtml(contract.primaryClient)}</strong>
         <span>${escapeHtml(contract.primaryDocument || contract.primaryPhone || "")}</span>
@@ -529,7 +548,7 @@ function renderContractRow(contract) {
       <td>${formatCurrency(contract.effectivePaidValue)}</td>
       <td>${formatCurrency(contract.overdueValue)}</td>
       <td>${contract.daysOverdue}</td>
-      <td><span class="status-badge status-${slugStatus(contract.appStatus)}">${contract.appStatus}</span></td>
+      <td><span class="status-badge status-${escapeAttr(slugStatus(contract.appStatus))}">${escapeHtml(contract.appStatus)}</span></td>
       <td><input class="notes-input" value="${escapeAttr(contract.notes || "")}" placeholder="Observações" ${writeDisabled}></td>
       <td>
         ${contract.lastUpdatedAt ? `<span class="last-update">${formatDate(contract.lastUpdatedAt)}</span>` : ""}
@@ -733,7 +752,7 @@ function renderTerminatedTable() {
   document.getElementById("terminatedSummary").textContent = `${state.terminated.length} registros`;
   document.getElementById("terminatedTableBody").innerHTML = state.terminated.map((contract) => `
     <tr>
-      <td><strong>${contract.contractId}</strong></td>
+      <td><strong>${escapeHtml(contract.contractId)}</strong></td>
       <td>${escapeHtml(contract.primaryClient)}</td>
       <td>${formatCurrency(contract.effectivePaidValue)}</td>
       <td>${formatDate(contract.terminatedAt)}</td>
@@ -955,7 +974,7 @@ function renderRanking(contracts) {
       <strong>${index + 1}</strong>
       <div>
         <strong>${escapeHtml(contract.primaryClient)}</strong>
-        <span>${contract.contractId} · ${escapeHtml(contract.category)} · ${contract.daysOverdue} dias</span>
+        <span>${escapeHtml(contract.contractId)} · ${escapeHtml(contract.category)} · ${contract.daysOverdue} dias</span>
       </div>
       <strong>${formatCurrency(contract.overdueValue)}</strong>
     </div>
@@ -972,7 +991,10 @@ function renderRanking(contracts) {
     };
     item.addEventListener("click", openContract);
     item.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") openContract();
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openContract();
+      }
     });
   });
 }
@@ -992,7 +1014,7 @@ function showContractHoverCard(contract, trigger) {
         <strong>${escapeHtml(contract.primaryClient)}</strong>
         <span>Contrato ${escapeHtml(contract.contractId)} · ${escapeHtml(contract.property || "-")} / ${escapeHtml(contract.quota || "-")}</span>
       </div>
-      <span class="status-badge status-${slugStatus(contract.appStatus)}">${escapeHtml(contract.appStatus)}</span>
+      <span class="status-badge status-${escapeAttr(slugStatus(contract.appStatus))}">${escapeHtml(contract.appStatus)}</span>
     </div>
     <div class="hover-card-grid">
       ${hoverDetail("Cessionário 2", contract.secondaryClient || "Não informado")}

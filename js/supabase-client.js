@@ -55,12 +55,18 @@ export class SupabaseClient {
 
   async refreshSession() {
     if (!this.session?.refresh_token) return null;
-    const session = await this.authRequest("/token?grant_type=refresh_token", {
-      method: "POST",
-      body: { refresh_token: this.session.refresh_token },
-    });
-    this.saveSession(session);
-    return session;
+    try {
+      const session = await this.authRequest("/token?grant_type=refresh_token", {
+        method: "POST",
+        body: { refresh_token: this.session.refresh_token },
+      });
+      this.saveSession(session);
+      return session;
+    } catch (error) {
+      this.saveSession(null);
+      error.code = "AUTH_REQUIRED";
+      throw error;
+    }
   }
 
   async authRequest(path, { method, body }) {
@@ -101,9 +107,19 @@ export class SupabaseClient {
     }
 
     const text = await response.text();
-    const payload = text ? JSON.parse(text) : null;
+    let payload = null;
+    try {
+      payload = text ? JSON.parse(text) : null;
+    } catch {
+      payload = text || null;
+    }
     if (!response.ok) {
-      throw new Error(payload?.message || payload?.details || `Erro Supabase ${response.status}.`);
+      const error = new Error(
+        payload?.message || payload?.details || (typeof payload === "string" && payload) || `Erro Supabase ${response.status}.`,
+      );
+      error.code = payload?.code || (response.status === 401 ? "AUTH_REQUIRED" : "SUPABASE_ERROR");
+      error.status = response.status;
+      throw error;
     }
     return payload;
   }
@@ -111,13 +127,27 @@ export class SupabaseClient {
   async selectAll(table, query = "select=*") {
     const rows = [];
     const pageSize = 1000;
+    const orderedQuery = query.includes("order=")
+      ? query
+      : `${query}&order=${encodeURIComponent(defaultOrder(table))}`;
     for (let offset = 0; ; offset += pageSize) {
-      const page = await this.request(`${table}?${query}`, {
+      const page = await this.request(`${table}?${orderedQuery}`, {
         headers: { Range: `${offset}-${offset + pageSize - 1}` },
       });
       rows.push(...page);
       if (page.length < pageSize) return rows;
     }
+  }
+
+  async rpc(name, args = {}) {
+    return this.request(`rpc/${encodeURIComponent(name)}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify(args),
+    });
   }
 
   async upsert(table, rows, onConflict) {
@@ -151,4 +181,18 @@ export class SupabaseClient {
       headers: { Prefer: "return=minimal" },
     });
   }
+}
+
+function defaultOrder(table) {
+  return {
+    profiles: "id.asc",
+    contracts: "contract_id.asc",
+    terminations: "contract_id.asc",
+    source_terminations: "contract_id.asc",
+    source_reversions: "contract_id.asc",
+    source_exceptions: "contract_id.asc",
+    import_runs: "created_at.desc,id.desc",
+    audit_logs: "created_at.desc,id.desc",
+    app_settings: "key.asc",
+  }[table] || "id.asc";
 }

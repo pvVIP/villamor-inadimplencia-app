@@ -1,5 +1,5 @@
-import { Database } from "./database.js?v=20260610-7";
-import { SupabaseClient } from "./supabase-client.js?v=20260610-1";
+import { Database } from "./database.js?v=20260611-1";
+import { SupabaseClient } from "./supabase-client.js?v=20260611-1";
 import { enrichContract, todayIso } from "./utils.js";
 
 export class SupabaseProvider extends Database {
@@ -157,41 +157,58 @@ export class SupabaseProvider extends Database {
   }
 
   async setSetting(key, value) {
-    await this.client.upsert("app_settings", [{
-      key,
-      value,
-      updated_by: this.client.session.user.id,
-      updated_at: todayIso(),
-    }], "key");
-  }
-
-  async addAuditLog(payload) {
-    await this.client.insert("audit_logs", {
-      action: payload.action || "update",
-      entity_type: "contract",
-      entity_id: payload.contractId || null,
-      details: payload,
-      user_id: this.client.session.user.id,
-      created_at: todayIso(),
+    await this.client.rpc("set_app_setting", {
+      p_key: key,
+      p_value: value,
     });
   }
 
-  async addImportLog(payload) {
-    const metadata = payload.metadata || {};
-    await this.client.insert("import_runs", {
-      file_name: metadata.fileName || "Atualização de base",
-      sheet_name: metadata.sheetName || null,
-      source_rows: metadata.sourceRows || payload.inserted + payload.updated || 0,
-      valid_rows: metadata.validRows || payload.inserted + payload.updated || 0,
-      active_rows: payload.inserted + payload.updated || 0,
-      terminated_rows: payload.historicalTerminationsDetected || 0,
-      reverted_rows: payload.reversionsDetected || 0,
-      exception_rows: payload.sourceExceptions || 0,
-      ignored_rows: metadata.ignoredRows || [],
-      report: payload,
-      imported_by: this.client.session.user.id,
-      created_at: todayIso(),
+  async terminateContract(contractId, reason, financial = {}) {
+    await this.client.rpc("terminate_contract", {
+      p_contract_id: contractId,
+      p_reason: reason,
+      p_termination_date: dateOnly(financial.terminationDate) || dateOnly(todayIso()),
+      p_is_default_termination: financial.isDefaultTermination !== false,
+      p_has_retention: Boolean(financial.hasRetention),
+      p_retained_value: financial.hasRetention ? Number(financial.retainedValue || 0) : 0,
+      p_has_refund: Boolean(financial.hasRefund),
+      p_refund_value: financial.hasRefund ? Number(financial.refundValue || 0) : 0,
     });
+  }
+
+  async restoreContract(contractId) {
+    await this.client.rpc("restore_contract", {
+      p_contract_id: contractId,
+    });
+  }
+
+  async updateContractStatus(contractId, nextStatus) {
+    await this.client.rpc("update_contract_status", {
+      p_contract_id: contractId,
+      p_next_status: nextStatus,
+    });
+  }
+
+  async updateContractNotes(contractId, notes) {
+    await this.client.rpc("update_contract_notes", {
+      p_contract_id: contractId,
+      p_notes: notes,
+    });
+  }
+
+  async mergeContracts(incomingContracts, metadata = {}) {
+    return this.client.rpc("import_contract_snapshot", {
+      p_contracts: incomingContracts.map(cleanContract),
+      p_metadata: metadata,
+    });
+  }
+
+  async addAuditLog() {
+    throw providerError("SERVER_AUDIT_REQUIRED", "A auditoria online deve ser criada pelo banco.");
+  }
+
+  async addImportLog() {
+    throw providerError("SERVER_AUDIT_REQUIRED", "O log de importação online deve ser criado pelo banco.");
   }
 
   async replaceCollection(table, contracts, mapper) {

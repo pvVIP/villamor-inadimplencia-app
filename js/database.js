@@ -240,9 +240,10 @@ export class Database {
       && !item.sourceTerminated
       && !item.sourceReverted
     ));
+    const incomingIds = new Set(incomingContracts.map((item) => item.contractId));
     const activeIds = new Set(activeIncoming.map((item) => item.contractId));
     const linkedReversions = linkReversionsToActiveContracts(sourceReversions, activeIncoming);
-    const merged = [];
+    const merged = current.filter((item) => !incomingIds.has(item.contractId));
     const report = {
       inserted: 0,
       updated: 0,
@@ -252,7 +253,9 @@ export class Database {
       reversionsDetected: linkedReversions.length,
       unlinkedReversions: linkedReversions.filter((item) => !item.linkedActiveContractId).length,
       sourceExceptions: sourceExceptions.length,
-      removedFromActive: current.filter((item) => !activeIds.has(item.contractId)).length,
+      removedFromActive: current.filter((item) => (
+        incomingIds.has(item.contractId) && !activeIds.has(item.contractId)
+      )).length,
       errors: [],
     };
 
