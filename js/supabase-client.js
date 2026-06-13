@@ -9,7 +9,10 @@ export class SupabaseClient {
 
   readSession() {
     try {
-      return JSON.parse(localStorage.getItem(SESSION_KEY)) || null;
+      const raw = sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY);
+      localStorage.removeItem(SESSION_KEY);
+      if (raw) sessionStorage.setItem(SESSION_KEY, raw);
+      return JSON.parse(raw) || null;
     } catch {
       return null;
     }
@@ -17,8 +20,9 @@ export class SupabaseClient {
 
   saveSession(session) {
     this.session = session;
-    if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-    else localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(SESSION_KEY);
+    if (session) sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    else sessionStorage.removeItem(SESSION_KEY);
   }
 
   async signIn(email, password) {
@@ -83,6 +87,91 @@ export class SupabaseClient {
       throw new Error(payload.msg || payload.message || payload.error_description || "Falha na autenticação.");
     }
     return payload;
+  }
+
+  async authUserRequest(path, options = {}, retry = true) {
+    const response = await fetch(`${this.url}/auth/v1${path}`, {
+      ...options,
+      headers: this.headers(true, {
+        "Content-Type": "application/json",
+        ...options.headers,
+      }),
+    });
+
+    if (response.status === 401 && retry && this.session?.refresh_token) {
+      await this.refreshSession();
+      return this.authUserRequest(path, options, false);
+    }
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(
+        payload.msg || payload.message || payload.error_description || `Erro de autenticação ${response.status}.`,
+      );
+      error.code = payload.code || (response.status === 401 ? "AUTH_REQUIRED" : "AUTH_ERROR");
+      error.status = response.status;
+      throw error;
+    }
+    return payload;
+  }
+
+  getAssuranceLevel() {
+    return decodeJwtPayload(this.session?.access_token)?.aal || "aal1";
+  }
+
+  async getUser() {
+    return this.authUserRequest("/user", { method: "GET" });
+  }
+
+  async listFactors() {
+    const user = await this.getUser();
+    return Array.isArray(user?.factors) ? user.factors : [];
+  }
+
+  async enrollTotp(friendlyName = "POS-VENDA VIP") {
+    const factor = await this.authUserRequest("/factors", {
+      method: "POST",
+      body: JSON.stringify({
+        factor_type: "totp",
+        friendly_name: friendlyName,
+      }),
+    });
+
+    if (factor?.totp?.qr_code && !factor.totp.qr_code.startsWith("data:")) {
+      factor.totp.qr_code = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(factor.totp.qr_code)}`;
+    }
+    return factor;
+  }
+
+  async unenrollFactor(factorId) {
+    return this.authUserRequest(`/factors/${encodeURIComponent(factorId)}`, {
+      method: "DELETE",
+    });
+  }
+
+  async challengeMfa(factorId) {
+    return this.authUserRequest(`/factors/${encodeURIComponent(factorId)}/challenge`, {
+      method: "POST",
+      body: "{}",
+    });
+  }
+
+  async verifyMfa(factorId, challengeId, code) {
+    const result = await this.authUserRequest(`/factors/${encodeURIComponent(factorId)}/verify`, {
+      method: "POST",
+      body: JSON.stringify({
+        challenge_id: challengeId,
+        code,
+      }),
+    });
+    const session = {
+      ...this.session,
+      ...result,
+      user: result.user || this.session?.user,
+      expires_at: Math.round(Date.now() / 1000) + Number(result.expires_in || 3600),
+    };
+    this.saveSession(session);
+    return session;
   }
 
   headers(authenticated = true, extra = {}) {
@@ -195,4 +284,22 @@ function defaultOrder(table) {
     audit_logs: "created_at.desc,id.desc",
     app_settings: "key.asc",
   }[table] || "id.asc";
+}
+
+function decodeJwtPayload(token) {
+  if (!token) return null;
+  try {
+    const payload = token.split(".")[1]
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
+    const padded = payload.padEnd(Math.ceil(payload.length / 4) * 4, "=");
+    return JSON.parse(decodeURIComponent(
+      atob(padded)
+        .split("")
+        .map((character) => `%${character.charCodeAt(0).toString(16).padStart(2, "0")}`)
+        .join(""),
+    ));
+  } catch {
+    return null;
+  }
 }

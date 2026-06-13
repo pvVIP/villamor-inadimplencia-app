@@ -1,5 +1,6 @@
 import { Database } from "./database.js?v=20260611-1";
-import { SupabaseClient } from "./supabase-client.js?v=20260611-1";
+import { requestTotpVerification } from "./mfa-dialog.js?v=20260613-2";
+import { SupabaseClient } from "./supabase-client.js?v=20260613-3";
 import { enrichContract, todayIso } from "./utils.js";
 
 export class SupabaseProvider extends Database {
@@ -19,7 +20,9 @@ export class SupabaseProvider extends Database {
 
   async signIn(email, password) {
     await this.client.signIn(email, password);
-    return this.loadProfile();
+    await this.loadProfile();
+    await this.ensurePrivilegedMfa();
+    return this.profile;
   }
 
   async signUp(email, password, displayName) {
@@ -34,6 +37,7 @@ export class SupabaseProvider extends Database {
   async init() {
     if (!this.hasSession()) throw providerError("AUTH_REQUIRED", "Entre para acessar o sistema.");
     await this.loadProfile();
+    await this.ensurePrivilegedMfa();
   }
 
   async loadProfile() {
@@ -58,10 +62,15 @@ export class SupabaseProvider extends Database {
       email: this.client.session?.user?.email || "",
       role: this.profile?.role || "viewer",
       canWrite: ["admin", "operator"].includes(this.profile?.role),
+      assuranceLevel: this.client.getAssuranceLevel(),
     };
   }
 
   async getContracts() {
+    if (this.profile?.role === "viewer") {
+      const rows = await this.client.rpc("viewer_contracts");
+      return rows.map((row) => enrichContract(redactedContract(row.payload)));
+    }
     const rows = await this.client.selectAll("contracts", "select=payload");
     return rows.map((row) => enrichContract(row.payload));
   }
@@ -71,28 +80,35 @@ export class SupabaseProvider extends Database {
   }
 
   async getTerminatedContracts() {
-    const rows = await this.client.selectAll(
-      "terminations",
-      "select=contract_snapshot,terminated_at,reason,reason_category,approach_type,observation,is_default_termination,has_retention,retained_value,retention_total,has_refund,refund_value,created_by,created_at,updated_by,updated_at,edit_history",
-    );
-    return rows.map((row) => enrichContract({
-      ...row.contract_snapshot,
-      terminatedAt: row.terminated_at,
-      terminationReason: row.reason_category || row.reason,
-      terminationObservation: row.observation || row.contract_snapshot?.terminationObservation || "",
-      terminationApproach: row.approach_type || row.contract_snapshot?.terminationApproach || "nao_informada",
-      isDefaultTermination: row.is_default_termination,
-      hasRetention: row.has_retention,
-      retainedValue: Number(row.retained_value || 0),
-      retentionTotal: row.retention_total,
-      hasRefund: row.has_refund,
-      refundValue: Number(row.refund_value || 0),
-      terminatedById: row.created_by,
-      terminationCreatedAt: row.created_at,
-      lastEditedById: row.updated_by,
-      lastEditedAt: row.updated_at,
-      terminationEditHistory: row.edit_history || [],
-    }));
+    const rows = this.profile?.role === "viewer"
+      ? await this.client.rpc("viewer_terminations")
+      : await this.client.selectAll(
+        "terminations",
+        "select=contract_snapshot,terminated_at,reason,reason_category,approach_type,observation,is_default_termination,has_retention,retained_value,retention_total,has_refund,refund_value,created_by,created_at,updated_by,updated_at,edit_history",
+      );
+    return rows.map((row) => {
+      const snapshot = this.profile?.role === "viewer"
+        ? redactedContract(row.contract_snapshot)
+        : row.contract_snapshot;
+      return enrichContract({
+        ...snapshot,
+        terminatedAt: row.terminated_at,
+        terminationReason: row.reason_category || row.reason,
+        terminationObservation: row.observation || snapshot?.terminationObservation || "",
+        terminationApproach: row.approach_type || snapshot?.terminationApproach || "nao_informada",
+        isDefaultTermination: row.is_default_termination,
+        hasRetention: row.has_retention,
+        retainedValue: Number(row.retained_value || 0),
+        retentionTotal: row.retention_total,
+        hasRefund: row.has_refund,
+        refundValue: Number(row.refund_value || 0),
+        terminatedById: row.created_by,
+        terminationCreatedAt: row.created_at,
+        lastEditedById: row.updated_by,
+        lastEditedAt: row.updated_at,
+        terminationEditHistory: row.edit_history || [],
+      });
+    });
   }
 
   async setTerminatedContracts(contracts) {
@@ -100,15 +116,15 @@ export class SupabaseProvider extends Database {
   }
 
   async getSourceTerminations() {
-    return this.getPayloadCollection("source_terminations");
+    return this.getPayloadCollection("source_terminations", "viewer_source_terminations");
   }
 
   async getSourceReversions() {
-    return this.getPayloadCollection("source_reversions");
+    return this.getPayloadCollection("source_reversions", "viewer_source_reversions");
   }
 
   async getSourceExceptions() {
-    return this.getPayloadCollection("source_exceptions");
+    return this.getPayloadCollection("source_exceptions", "viewer_source_exceptions");
   }
 
   async setSourceTerminations(contracts) {
@@ -135,9 +151,57 @@ export class SupabaseProvider extends Database {
     }));
   }
 
-  async getPayloadCollection(table) {
-    const rows = await this.client.selectAll(table, "select=payload");
-    return rows.map((row) => enrichContract(row.payload));
+  async getPayloadCollection(table, viewerRpc) {
+    const rows = this.profile?.role === "viewer"
+      ? await this.client.rpc(viewerRpc)
+      : await this.client.selectAll(table, "select=payload");
+    return rows.map((row) => enrichContract(
+      this.profile?.role === "viewer" ? redactedContract(row.payload) : row.payload,
+    ));
+  }
+
+  async ensurePrivilegedMfa() {
+    if (!["admin", "operator"].includes(this.profile?.role)) return;
+    if (this.client.getAssuranceLevel() === "aal2") return;
+
+    try {
+      const factors = await this.client.listFactors();
+      const totpFactors = factors.filter((factor) => (
+        (factor.factor_type || factor.type) === "totp"
+      ));
+      const verifiedFactor = totpFactors.find((factor) => factor.status === "verified");
+
+      if (verifiedFactor) {
+        await requestTotpVerification({
+          onVerify: async (code) => {
+            const challenge = await this.client.challengeMfa(verifiedFactor.id);
+            return this.client.verifyMfa(verifiedFactor.id, challenge.id, code);
+          },
+        });
+      } else {
+        await Promise.all(
+          totpFactors.map((factor) => this.client.unenrollFactor(factor.id).catch(() => null)),
+        );
+        const factor = await this.client.enrollTotp();
+        await requestTotpVerification({
+          enrollment: {
+            qrCode: factor.totp?.qr_code || "",
+            secret: factor.totp?.secret || "",
+          },
+          onVerify: async (code) => {
+            const challenge = await this.client.challengeMfa(factor.id);
+            return this.client.verifyMfa(factor.id, challenge.id, code);
+          },
+        });
+      }
+
+      if (this.client.getAssuranceLevel() !== "aal2") {
+        throw providerError("MFA_REQUIRED", "Nao foi possivel elevar a seguranca desta sessao.");
+      }
+    } catch (error) {
+      await this.signOut();
+      throw error;
+    }
   }
 
   async putContract(contract) {
@@ -325,6 +389,20 @@ function cleanContract(contract) {
     ...payload
   } = contract;
   return payload;
+}
+
+function redactedContract(contract) {
+  return {
+    ...contract,
+    primaryClient: "Dados restritos",
+    secondaryClient: "",
+    primaryDocument: "",
+    secondaryDocument: "",
+    primaryPhone: "",
+    secondaryPhone: "",
+    notes: "",
+    sourceExtras: {},
+  };
 }
 
 function dateOnly(value) {

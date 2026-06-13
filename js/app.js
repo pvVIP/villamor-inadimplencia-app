@@ -1,4 +1,4 @@
-import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260613-1";
+import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260613-4";
 import { DistratoService } from "./distratos.js?v=20260613-1";
 import { parseWorkbookFile } from "./upload.js?v=20260609-4";
 import { renderCharts } from "./charts.js";
@@ -48,6 +48,8 @@ const state = {
   canWrite: true,
   authMode: "signin",
   navigationCollapsed: readNavigationPreference(),
+  operationalKpisExpanded: false,
+  presentationMode: false,
 };
 
 const distratos = new DistratoService(db);
@@ -56,6 +58,7 @@ document.addEventListener("DOMContentLoaded", boot);
 
 async function boot() {
   syncNavigationState(state.navigationCollapsed);
+  syncTopbar("operational");
   bindAuthEvents();
   bindEvents();
   setupProgressiveWebApp();
@@ -207,7 +210,10 @@ function bindEvents() {
   document.getElementById("navigationToggle").addEventListener("click", () => {
     setNavigationCollapsed(!state.navigationCollapsed, true);
   });
-  window.addEventListener("resize", debounce(() => syncNavigationState(state.navigationCollapsed), 120));
+  window.addEventListener("resize", debounce(() => {
+    syncNavigationState(state.navigationCollapsed);
+    syncResponsiveExecutiveDisclosure();
+  }, 120));
 
   const applyDebounced = debounce(() => {
     state.page = 1;
@@ -246,6 +252,9 @@ function bindEvents() {
   });
   document.getElementById("selectAllRows").addEventListener("change", toggleSelectPage);
   document.getElementById("bulkTerminateButton").addEventListener("click", requestBulkTermination);
+  document.getElementById("clearSelectionButton").addEventListener("click", clearSelection);
+  document.getElementById("operationalKpiToggle").addEventListener("click", toggleOperationalKpis);
+  document.getElementById("priorityQueueButton").addEventListener("click", openPriorityQueue);
   document.getElementById("terminateForm").addEventListener("submit", handleTerminationSubmit);
   document.getElementById("cancelTerminationButton").addEventListener("click", cancelTermination);
   document.getElementById("terminateDialog").addEventListener("cancel", (event) => {
@@ -262,6 +271,10 @@ function bindEvents() {
   document.getElementById("hasRefund").addEventListener("change", syncTerminationFinancialFields);
   document.getElementById("retentionTotal").addEventListener("change", handleRetentionTotalChange);
   document.getElementById("terminationContractSelect").addEventListener("change", handleTerminationContractSelection);
+  document.getElementById("terminationContractSearch").addEventListener("input", renderTerminationContractResults);
+  document.getElementById("terminationContractSearch").addEventListener("focus", renderTerminationContractResults);
+  document.getElementById("terminationContractSearch").addEventListener("keydown", handleTerminationContractSearchKeydown);
+  document.getElementById("terminationContractResults").addEventListener("click", handleTerminationContractResultClick);
   ["retainedValue", "refundValue"].forEach((id) => {
     const input = document.getElementById(id);
     input.addEventListener("input", handleMoneyInput);
@@ -277,6 +290,8 @@ function bindEvents() {
     cancelImport();
   });
   document.getElementById("executiveReportButton").addEventListener("click", printExecutivePortfolioReport);
+  document.getElementById("presentationModeButton").addEventListener("click", togglePresentationMode);
+  document.getElementById("presentationExitButton").addEventListener("click", togglePresentationMode);
   document.getElementById("newTerminationButton").addEventListener("click", openTerminationFromHub);
   document.getElementById("formalTerminationReportButton").addEventListener("click", () => printTerminationReport("formal"));
   document.getElementById("executiveTerminationReportButton").addEventListener("click", () => printTerminationReport("executive"));
@@ -289,6 +304,10 @@ function bindEvents() {
   document.getElementById("changeUserButton").addEventListener("click", changeUser);
   document.getElementById("themeToggle").addEventListener("click", toggleTheme);
   document.getElementById("installAppButton").addEventListener("click", installProgressiveWebApp);
+  document.querySelector("#executiveAnalytics > summary").addEventListener("click", () => {
+    document.getElementById("executiveAnalytics").dataset.userToggled = "true";
+  });
+  document.addEventListener("pointerdown", handleContractSearchOutsideClick);
 }
 
 async function refreshApplicationData() {
@@ -368,6 +387,8 @@ function renderAll() {
   renderDataHealth();
   renderExecutive();
   updateFilterDock();
+  renderActiveFilterChips();
+  syncResponsiveExecutiveDisclosure();
 }
 
 function renderPerformanceMeters() {
@@ -399,6 +420,7 @@ function performanceMeterMarkup(percentage, current, total) {
 }
 
 function switchTab(target) {
+  const previousTarget = document.body.dataset.activeTab || "operational";
   closeFilterPanel(false);
   document.querySelectorAll(".nav-tab").forEach((button) => button.classList.toggle("active", button.dataset.tabTarget === target));
   document.getElementById("operationalPanel").classList.toggle("active", target === "operational");
@@ -407,15 +429,64 @@ function switchTab(target) {
   document.getElementById("healthPanel").classList.toggle("active", target === "health");
   document.getElementById("executivePanel").classList.toggle("active", target === "executive");
   document.body.dataset.activeTab = target;
+  if (previousTarget !== target) window.scrollTo({ top: 0, behavior: "auto" });
+  syncTopbar(target);
   updateFilterDock();
-  if (target === "executive") setTimeout(() => renderExecutive(), 80);
+  renderActiveFilterChips();
+  if (target !== "executive" && state.presentationMode) togglePresentationMode(false);
+  if (target === "executive") {
+    setTimeout(() => {
+      renderExecutive();
+      syncResponsiveExecutiveDisclosure();
+    }, 80);
+  }
+}
+
+const TOPBAR_CONTENT = {
+  operational: {
+    eyebrow: "Operação da carteira",
+    title: "Operacionalização",
+    description: "Priorize contratos, registre contexto e acompanhe a exposição financeira.",
+  },
+  terminations: {
+    eyebrow: "Controle auditado",
+    title: "Central de distratos",
+    description: "Registre encerramentos, retenções e reembolsos com rastreabilidade.",
+  },
+  reversions: {
+    eyebrow: "Histórico contratual",
+    title: "Reversões",
+    description: "Consulte vínculos entre contratos antigos e a carteira ativa.",
+  },
+  health: {
+    eyebrow: "Governança da informação",
+    title: "Alertas de dados",
+    description: "Identifique inconsistências antes que elas afetem indicadores e decisões.",
+  },
+  executive: {
+    eyebrow: "Visão estratégica",
+    title: "Dashboard executivo",
+    description: "Risco, exposição e prioridades da carteira em uma leitura objetiva.",
+  },
+};
+
+function syncTopbar(target) {
+  const content = TOPBAR_CONTENT[target] || TOPBAR_CONTENT.operational;
+  document.getElementById("topbarEyebrow").textContent = content.eyebrow;
+  document.getElementById("topbarTitle").textContent = content.title;
+  document.getElementById("topbarDescription").textContent = content.description;
+  document.querySelectorAll(".contextual-action").forEach((element) => {
+    element.hidden = !String(element.dataset.tabs || "").split(" ").includes(target);
+  });
 }
 
 function readNavigationPreference() {
   try {
-    return localStorage.getItem(NAVIGATION_STORAGE_KEY) === "true";
+    const stored = localStorage.getItem(NAVIGATION_STORAGE_KEY);
+    if (stored === null) return window.matchMedia("(max-width: 980px)").matches;
+    return stored === "true";
   } catch {
-    return false;
+    return window.matchMedia("(max-width: 980px)").matches;
   }
 }
 
@@ -521,6 +592,79 @@ function updateFilterDock() {
   badge.textContent = String(count);
   badge.hidden = count === 0;
   button.classList.toggle("has-active-filters", count > 0);
+  renderActiveFilterChips();
+}
+
+function renderActiveFilterChips() {
+  const host = document.getElementById("activeFilterChips");
+  const config = activeFilterConfig();
+  if (!config) {
+    host.hidden = true;
+    host.innerHTML = "";
+    return;
+  }
+
+  const filters = config.panelId === "terminationFilterPanel"
+    ? terminationFilterDescriptors()
+    : portfolioFilterDescriptors();
+  host.hidden = filters.length === 0;
+  host.innerHTML = filters.map((filter) => `
+    <button type="button" class="filter-chip" data-filter-id="${escapeAttr(filter.id)}" aria-label="Remover filtro ${escapeAttr(filter.label)}">
+      <span>${escapeHtml(filter.label)}</span>
+      <span aria-hidden="true">×</span>
+    </button>
+  `).join("");
+  host.querySelectorAll("[data-filter-id]").forEach((button) => {
+    button.addEventListener("click", () => clearSingleFilter(button.dataset.filterId));
+  });
+}
+
+function portfolioFilterDescriptors() {
+  const descriptors = [];
+  const search = document.getElementById("globalSearch").value.trim();
+  if (search) descriptors.push({ id: "globalSearch", label: `Busca: ${search}` });
+  [
+    ["categoryFilter", "Categoria"],
+    ["groupFilter", "Grupo"],
+    ["statusFilter", "Status"],
+    ["agingFilter", "Atraso"],
+    ["valueFilter", "Valor"],
+  ].forEach(([id, label]) => {
+    const element = document.getElementById(id);
+    if (element.value !== "all") descriptors.push({ id, label: `${label}: ${selectedOptionLabel(element)}` });
+  });
+  return descriptors;
+}
+
+function terminationFilterDescriptors() {
+  const descriptors = [];
+  const search = document.getElementById("terminationSearch").value.trim();
+  if (search) descriptors.push({ id: "terminationSearch", label: `Busca: ${search}` });
+  [
+    ["terminationReasonFilter", "Motivo"],
+    ["terminationApproachFilter", "Abordagem"],
+  ].forEach(([id, label]) => {
+    const element = document.getElementById(id);
+    if (element.value !== "all") descriptors.push({ id, label: `${label}: ${selectedOptionLabel(element)}` });
+  });
+  const start = document.getElementById("terminationStartDate").value;
+  const end = document.getElementById("terminationEndDate").value;
+  if (start) descriptors.push({ id: "terminationStartDate", label: `Desde: ${formatDate(start)}` });
+  if (end) descriptors.push({ id: "terminationEndDate", label: `Até: ${formatDate(end)}` });
+  return descriptors;
+}
+
+function clearSingleFilter(id) {
+  const element = document.getElementById(id);
+  if (!element) return;
+  element.value = element.tagName === "SELECT" ? "all" : "";
+  state.page = 1;
+  if (id.startsWith("termination")) {
+    renderTerminatedTable();
+    updateFilterDock();
+    return;
+  }
+  renderAll();
 }
 
 function activePortfolioFilterCount() {
@@ -606,13 +750,17 @@ function sortBy(key) {
 function renderOperationalKpis() {
   const kpis = calculateKpis(state.filtered, state.terminated);
   document.getElementById("operationalKpis").innerHTML = [
-    metric("Contratos filtrados", kpis.totalActive, "Base ativa"),
-    metric("Inadimplentes", kpis.totalDefaulted, formatPercent(kpis.totalActive ? kpis.totalDefaulted / kpis.totalActive : 0)),
-    metric("Valor atrasado", formatCurrency(kpis.totalOverdue), "Exposição financeira"),
-    metric("Aging médio", `${Math.round(kpis.averageAging)} dias`, "Pela data próximo vencimento"),
-    metric("Aging 90+ dias", kpis.aging90Plus, "Prioridade alta"),
-    metric("Aging 180+ dias", kpis.aging180Plus, "Risco crítico"),
+    metric("Contratos filtrados", kpis.totalActive, "Base ativa", "", "", "operational-secondary-kpi"),
+    metric("Inadimplentes", kpis.totalDefaulted, formatPercent(kpis.totalActive ? kpis.totalDefaulted / kpis.totalActive : 0), "danger", "", "operational-primary-kpi"),
+    metric("Valor atrasado", formatCurrency(kpis.totalOverdue), "Exposição financeira", "danger", "", "operational-primary-kpi"),
+    metric("Aging médio", `${Math.round(kpis.averageAging)} dias`, "Pela data próximo vencimento", "", "", "operational-secondary-kpi"),
+    metric("Aging 90+ dias", kpis.aging90Plus, "Prioridade alta", "warning", "", "operational-secondary-kpi"),
+    metric("Aging 180+ dias", kpis.aging180Plus, "Risco crítico", "danger", "", "operational-primary-kpi"),
   ].join("");
+  document.getElementById("operationalKpis").classList.toggle("show-all", state.operationalKpisExpanded);
+  const toggle = document.getElementById("operationalKpiToggle");
+  toggle.setAttribute("aria-expanded", String(state.operationalKpisExpanded));
+  toggle.textContent = state.operationalKpisExpanded ? "Ver indicadores essenciais" : "Ver todos os indicadores";
 }
 
 function renderExecutive() {
@@ -620,16 +768,19 @@ function renderExecutive() {
   const productionTerminations = getProductionTerminations();
   const kpis = calculateKpis(active, productionTerminations);
   document.getElementById("dashboardDate").textContent = `Atualizado em ${formatDate(new Date().toISOString())}`;
+  document.getElementById("executivePrimaryKpis").innerHTML = [
+    metric("Exposição em atraso", formatCurrency(kpis.totalOverdue), "Valor financeiro sob risco", "danger"),
+    metric("% inadimplência", formatPercent(kpis.defaultRate), "Sobre o valor da carteira", "danger"),
+    metric("Faixa crítica", `${kpis.aging180Plus} contratos`, "Mais de 180 dias", "warning"),
+    metric("Potencial recuperável", formatCurrency(kpis.recoverableValue), "Integralizado dos inadimplentes", "success"),
+  ].join("");
   document.getElementById("executiveKpis").innerHTML = [
     metric("Contratos ativos", kpis.totalActive, "Carteira filtrada"),
     metric("Adimplentes", kpis.totalCurrent, "Inclui quitados", "success"),
     metric("Inadimplentes", kpis.totalDefaulted, "90+ dias", "danger"),
     metric("Em atraso", kpis.totalLate, "Até 89 dias", "warning"),
     metric("Distratados", kpis.totalTerminated, "A partir de 07/05/2026", "closed", "terminatedMetricCard"),
-    metric("Recuperável", formatCurrency(kpis.recoverableValue), "Integralizado dos inadimplentes"),
     metric("Carteira", formatCurrency(kpis.totalPortfolio), "Valor total"),
-    metric("Inadimplência", formatCurrency(kpis.totalOverdue), "Valor atrasado"),
-    metric("% inadimplência", formatPercent(kpis.defaultRate), "Sobre carteira"),
     metric("Ticket médio", formatCurrency(kpis.averageTicket), "Ativos"),
     metric("% distratos", formatPercent(kpis.terminationRate), "Total histórico"),
     metric("Aging médio", `${Math.round(kpis.averageAging)} dias`, `${kpis.aging90Plus} contratos 90+ dias`),
@@ -645,10 +796,27 @@ function renderExecutive() {
   renderInsights(active, productionTerminations);
 }
 
-function metric(label, value, helper, tone = "", id = "") {
+function metric(label, value, helper, tone = "", id = "", className = "") {
   const toneClass = tone ? ` metric-card-${tone}` : "";
+  const extraClass = className ? ` ${className}` : "";
   const idAttribute = id ? ` id="${id}" tabindex="0"` : "";
-  return `<article class="metric-card${toneClass}"${idAttribute}><span>${label}</span><strong>${value}</strong><small>${helper}</small></article>`;
+  return `<article class="metric-card${toneClass}${extraClass}"${idAttribute}><span>${label}</span><strong>${value}</strong><small>${helper}</small></article>`;
+}
+
+function toggleOperationalKpis() {
+  state.operationalKpisExpanded = !state.operationalKpisExpanded;
+  renderOperationalKpis();
+}
+
+function openPriorityQueue() {
+  document.getElementById("statusFilter").value = STATUS.DEFAULTED;
+  document.getElementById("agingFilter").value = "180+";
+  state.sortKey = "overdueValue";
+  state.sortDirection = "desc";
+  state.page = 1;
+  renderAll();
+  document.querySelector(".table-shell")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  toast("Fila crítica aberta: inadimplentes com mais de 180 dias, priorizados por valor.");
 }
 
 function renderExecutiveBrief(contracts, kpis) {
@@ -699,8 +867,12 @@ function renderTable() {
   document.getElementById("tableSummary").textContent = `${state.filtered.length} contratos filtrados`;
   document.getElementById("pageIndicator").textContent = `Página ${state.page} de ${totalPages}`;
   document.getElementById("contractsTableBody").innerHTML = rows.map(renderContractRow).join("") || emptyRow(11, "Nenhum contrato encontrado.");
+  document.getElementById("contractsMobileList").innerHTML = rows.map(renderMobileContractCard).join("")
+    || '<div class="mobile-empty-state">Nenhum contrato encontrado.</div>';
   document.getElementById("selectAllRows").checked = rows.length > 0 && rows.every((row) => state.selected.has(row.contractId));
   bindTableRows();
+  bindMobileContractCards();
+  renderSelectionBar();
 }
 
 function renderContractRow(contract) {
@@ -720,12 +892,55 @@ function renderContractRow(contract) {
       <td>${formatCurrency(contract.overdueValue)}</td>
       <td>${contract.daysOverdue}</td>
       <td><span class="status-badge status-${escapeAttr(slugStatus(contract.appStatus))}">${escapeHtml(contract.appStatus)}</span></td>
-      <td><input class="notes-input" value="${escapeAttr(contract.notes || "")}" placeholder="Observações" ${writeDisabled}></td>
+      <td>
+        <div class="notes-editor">
+          <input class="notes-input" value="${escapeAttr(contract.notes || "")}" placeholder="Observações" ${writeDisabled}>
+          <small class="note-save-status" aria-live="polite"></small>
+        </div>
+      </td>
       <td>
         ${contract.lastUpdatedAt ? `<span class="last-update">${formatDate(contract.lastUpdatedAt)}</span>` : ""}
         ${state.canWrite ? '<button class="danger-button compact terminate-row-button" type="button">Distratar</button>' : ""}
       </td>
     </tr>
+  `;
+}
+
+function renderMobileContractCard(contract) {
+  const checked = state.selected.has(contract.contractId) ? "checked" : "";
+  const writeDisabled = state.canWrite ? "" : "disabled";
+  return `
+    <article class="mobile-contract-card" data-contract-id="${escapeAttr(contract.contractId)}">
+      <div class="mobile-contract-card-head">
+        <label class="mobile-contract-select">
+          <input type="checkbox" class="mobile-row-check" ${checked} ${writeDisabled} aria-label="Selecionar contrato ${escapeAttr(contract.contractId)}">
+        </label>
+        <button class="mobile-contract-summary" type="button" aria-expanded="false">
+          <span>
+            <strong>${escapeHtml(contract.primaryClient || "Cliente não informado")}</strong>
+            <small>Contrato ${escapeHtml(contract.contractId)} · ${escapeHtml(contract.category)}</small>
+          </span>
+          <span class="mobile-contract-risk">
+            <strong>${formatCurrency(contract.overdueValue)}</strong>
+            <small>${contract.daysOverdue} dias</small>
+          </span>
+        </button>
+      </div>
+      <div class="mobile-contract-details" hidden>
+        <dl>
+          <div><dt>Status</dt><dd><span class="status-badge status-${escapeAttr(slugStatus(contract.appStatus))}">${escapeHtml(contract.appStatus)}</span></dd></div>
+          <div><dt>Grupo</dt><dd>${escapeHtml(contract.product)}</dd></div>
+          <div><dt>Integralizado</dt><dd>${formatCurrency(contract.effectivePaidValue)}</dd></div>
+          <div><dt>Documento</dt><dd>${escapeHtml(contract.primaryDocument || "-")}</dd></div>
+        </dl>
+        <label class="mobile-notes-label">
+          Observações
+          <textarea class="mobile-notes-input" placeholder="Contexto da operação" ${writeDisabled}>${escapeHtml(contract.notes || "")}</textarea>
+          <small class="note-save-status" aria-live="polite"></small>
+        </label>
+        ${state.canWrite ? '<button class="danger-button mobile-terminate-button" type="button">Distratar contrato</button>' : ""}
+      </div>
+    </article>
   `;
 }
 
@@ -735,6 +950,8 @@ function bindTableRows() {
     row.querySelector(".row-check").addEventListener("change", (event) => {
       if (event.target.checked) state.selected.add(contract.contractId);
       else state.selected.delete(contract.contractId);
+      syncSelectionInputs(contract.contractId);
+      renderSelectionBar();
     });
     const terminateButton = row.querySelector(".terminate-row-button");
     terminateButton?.addEventListener("click", () => {
@@ -748,15 +965,60 @@ function bindTableRows() {
     clientTrigger.addEventListener("mouseleave", hideContractHoverCard);
     clientTrigger.addEventListener("focus", () => showContractHoverCard(contract, clientTrigger));
     clientTrigger.addEventListener("blur", hideContractHoverCard);
-    row.querySelector(".notes-input").addEventListener("change", (event) => handleNotesChange(contract, event.target.value));
+    const notesInput = row.querySelector(".notes-input");
+    const noteStatus = row.querySelector(".note-save-status");
+    notesInput.addEventListener("input", () => setNoteStatus(noteStatus, "Alterado"));
+    notesInput.addEventListener("change", (event) => handleNotesChange(contract, event.target.value, noteStatus));
   });
 }
 
-async function handleNotesChange(contract, notes) {
+function bindMobileContractCards() {
+  document.querySelectorAll(".mobile-contract-card[data-contract-id]").forEach((card) => {
+    const contract = state.contracts.find((item) => item.contractId === card.dataset.contractId);
+    const summary = card.querySelector(".mobile-contract-summary");
+    const details = card.querySelector(".mobile-contract-details");
+    summary.addEventListener("click", () => {
+      const expanded = summary.getAttribute("aria-expanded") === "true";
+      summary.setAttribute("aria-expanded", String(!expanded));
+      details.hidden = expanded;
+    });
+    card.querySelector(".mobile-row-check").addEventListener("change", (event) => {
+      if (event.target.checked) state.selected.add(contract.contractId);
+      else state.selected.delete(contract.contractId);
+      syncSelectionInputs(contract.contractId);
+      renderSelectionBar();
+    });
+    card.querySelector(".mobile-terminate-button")?.addEventListener("click", () => {
+      state.pendingTermination = [contract];
+      state.terminationTrigger = card.querySelector(".mobile-terminate-button");
+      openTerminateDialog();
+    });
+    const notesInput = card.querySelector(".mobile-notes-input");
+    const noteStatus = card.querySelector(".note-save-status");
+    notesInput.addEventListener("input", () => setNoteStatus(noteStatus, "Alterado"));
+    notesInput.addEventListener("change", (event) => handleNotesChange(contract, event.target.value, noteStatus));
+  });
+}
+
+async function handleNotesChange(contract, notes, statusElement = null) {
   if (!state.canWrite) return;
-  await distratos.updateNotes(contract, notes, state.currentUser);
-  await reload();
-  toast("Observação salva.");
+  setNoteStatus(statusElement, "Salvando...");
+  try {
+    await distratos.updateNotes(contract, notes, state.currentUser);
+    contract.notes = notes;
+    const stored = state.contracts.find((item) => item.contractId === contract.contractId);
+    if (stored) stored.notes = notes;
+    setNoteStatus(statusElement, "Salvo", "success");
+  } catch (error) {
+    setNoteStatus(statusElement, "Falha ao salvar", "error");
+    toast(`Não foi possível salvar a observação: ${error.message}`);
+  }
+}
+
+function setNoteStatus(element, message, tone = "") {
+  if (!element) return;
+  element.textContent = message;
+  element.dataset.tone = tone;
 }
 
 function requestBulkTermination() {
@@ -772,6 +1034,26 @@ function requestBulkTermination() {
   state.pendingTermination = selectedContracts;
   state.terminationTrigger = document.getElementById("bulkTerminateButton");
   openTerminateDialog();
+}
+
+function renderSelectionBar() {
+  const bar = document.getElementById("bulkSelectionBar");
+  const count = state.selected.size;
+  bar.hidden = count === 0 || !state.canWrite;
+  document.getElementById("bulkSelectionCount").textContent = `${count} ${count === 1 ? "contrato selecionado" : "contratos selecionados"}`;
+}
+
+function clearSelection() {
+  state.selected.clear();
+  renderTable();
+}
+
+function syncSelectionInputs(contractId) {
+  const selected = state.selected.has(contractId);
+  document.querySelectorAll(`[data-contract-id="${CSS.escape(contractId)}"] .row-check, [data-contract-id="${CSS.escape(contractId)}"] .mobile-row-check`)
+    .forEach((input) => {
+      input.checked = selected;
+    });
 }
 
 function openTerminationFromHub() {
@@ -792,6 +1074,7 @@ function openTerminateDialog() {
   const isEditing = Boolean(editContract);
   const contractField = document.getElementById("terminationContractField");
   const contractSelect = document.getElementById("terminationContractSelect");
+  const contractSearch = document.getElementById("terminationContractSearch");
   contractField.hidden = !selectContract;
   contractSelect.innerHTML = [
     '<option value="">Selecione um contrato ativo</option>',
@@ -800,6 +1083,9 @@ function openTerminateDialog() {
       .sort((a, b) => String(a.primaryClient).localeCompare(String(b.primaryClient), "pt-BR"))
       .map((contract) => `<option value="${escapeAttr(contract.contractId)}">${escapeHtml(contract.primaryClient)} · ${escapeHtml(contract.contractId)}</option>`),
   ].join("");
+  contractSelect.value = "";
+  contractSearch.value = "";
+  document.getElementById("terminationContractResults").hidden = true;
 
   document.getElementById("terminationReason").value = "";
   document.getElementById("terminationApproach").value = "";
@@ -844,6 +1130,10 @@ function openTerminateDialog() {
   syncTerminationFinancialFields();
   renderTerminationContractSummary();
   document.getElementById("terminateDialog").showModal();
+  if (selectContract) {
+    renderTerminationContractResults();
+    setTimeout(() => contractSearch.focus(), 0);
+  }
 }
 
 async function handleTerminationSubmit(event) {
@@ -939,6 +1229,8 @@ async function handleTerminationSubmit(event) {
 
 function cancelTermination() {
   document.getElementById("terminateDialog").close();
+  document.getElementById("terminationContractResults").hidden = true;
+  document.getElementById("terminationContractSearch").value = "";
   document.getElementById("terminationReason").value = "";
   document.getElementById("terminationReasonError").hidden = true;
   document.getElementById("terminationFinancialError").hidden = true;
@@ -972,6 +1264,91 @@ function handleTerminationContractSelection(event) {
   document.getElementById("terminationFinancialError").hidden = true;
   syncTerminationFinancialFields();
   renderTerminationContractSummary();
+}
+
+function renderTerminationContractResults() {
+  const field = document.getElementById("terminationContractField");
+  const host = document.getElementById("terminationContractResults");
+  if (field.hidden) {
+    host.hidden = true;
+    return;
+  }
+  const query = normalizeSearchValue(document.getElementById("terminationContractSearch").value);
+  const matches = state.contracts
+    .filter((contract) => !query || normalizeSearchValue([
+      contract.primaryClient,
+      contract.contractId,
+      contract.primaryDocument,
+      contract.primaryPhone,
+      contract.product,
+    ].join(" ")).includes(query))
+    .sort((a, b) => {
+      if (query) {
+        const aStarts = normalizeSearchValue(`${a.primaryClient} ${a.contractId}`).startsWith(query) ? 1 : 0;
+        const bStarts = normalizeSearchValue(`${b.primaryClient} ${b.contractId}`).startsWith(query) ? 1 : 0;
+        if (aStarts !== bStarts) return bStarts - aStarts;
+      }
+      return toNumber(b.overdueValue) - toNumber(a.overdueValue);
+    })
+    .slice(0, 8);
+
+  host.innerHTML = matches.map((contract, index) => `
+    <button type="button" role="option" data-contract-result="${escapeAttr(contract.contractId)}" aria-selected="false">
+      <span>
+        <strong>${escapeHtml(contract.primaryClient || "Cliente não informado")}</strong>
+        <small>${escapeHtml(contract.contractId)} · ${escapeHtml(contract.primaryDocument || contract.primaryPhone || contract.product || "")}</small>
+      </span>
+      <span>
+        <strong>${formatCurrency(contract.overdueValue)}</strong>
+        <small>${contract.daysOverdue} dias</small>
+      </span>
+      ${index === 0 ? '<span class="sr-only">Primeiro resultado</span>' : ""}
+    </button>
+  `).join("") || '<p class="contract-search-empty">Nenhum contrato encontrado.</p>';
+  host.hidden = false;
+}
+
+function handleTerminationContractResultClick(event) {
+  const button = event.target.closest("[data-contract-result]");
+  if (!button) return;
+  selectTerminationContract(button.dataset.contractResult);
+}
+
+function selectTerminationContract(contractId) {
+  const contract = state.contracts.find((item) => item.contractId === contractId);
+  if (!contract) return;
+  const select = document.getElementById("terminationContractSelect");
+  select.value = contractId;
+  document.getElementById("terminationContractSearch").value = `${contract.primaryClient} · ${contract.contractId}`;
+  document.getElementById("terminationContractResults").hidden = true;
+  handleTerminationContractSelection({ target: select });
+}
+
+function handleTerminationContractSearchKeydown(event) {
+  const host = document.getElementById("terminationContractResults");
+  if (event.key === "Escape") {
+    host.hidden = true;
+    return;
+  }
+  if (event.key !== "Enter") return;
+  const firstResult = host.querySelector("[data-contract-result]");
+  if (!firstResult) return;
+  event.preventDefault();
+  selectTerminationContract(firstResult.dataset.contractResult);
+}
+
+function handleContractSearchOutsideClick(event) {
+  const field = document.getElementById("terminationContractField");
+  if (field.hidden || field.contains(event.target)) return;
+  document.getElementById("terminationContractResults").hidden = true;
+}
+
+function normalizeSearchValue(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
 }
 
 function renderTerminationContractSummary() {
@@ -2136,6 +2513,26 @@ async function toggleTheme() {
   applyTheme(nextTheme);
   await db.setSetting("theme", nextTheme);
   renderExecutive();
+}
+
+function togglePresentationMode(force) {
+  const next = typeof force === "boolean" ? force : !state.presentationMode;
+  state.presentationMode = next;
+  document.body.classList.toggle("presentation-mode", next);
+  document.getElementById("presentationModeButton").setAttribute("aria-pressed", String(next));
+  document.getElementById("presentationModeButton").textContent = next ? "Encerrar apresentação" : "Modo apresentação";
+  document.getElementById("presentationExitButton").hidden = !next;
+  if (next) {
+    document.getElementById("executiveDetails").open = false;
+    document.getElementById("executiveAnalytics").open = true;
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+}
+
+function syncResponsiveExecutiveDisclosure() {
+  const analytics = document.getElementById("executiveAnalytics");
+  if (!analytics || analytics.dataset.userToggled === "true" || state.presentationMode) return;
+  analytics.open = !window.matchMedia("(max-width: 720px)").matches;
 }
 
 function applyTheme(theme) {

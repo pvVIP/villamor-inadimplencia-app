@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#522b2c">
   <meta name="description" content="Pós-venda VIP Villamor: operação, contratos e gestão da inadimplência.">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://vvslbuolpbcqwwmdgzuz.supabase.co; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; upgrade-insecure-requests">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>PÓS-VENDA VIP | Villamor</title>
@@ -14,12 +15,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20260613-2">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
-  <script src="js/app.js?v=20260613-2" type="module"></script>
+  <link rel="stylesheet" href="css/style.css?v=20260613-4">
+  <script src="vendor/chart.umd.min.js?v=4.4.7" defer></script>
+  <script src="vendor/xlsx.full.min.js?v=0.20.3" defer></script>
+  <script src="js/app.js?v=20260613-4" type="module"></script>
 </head>
-<body>
+<body data-active-tab="operational">
   <a class="skip-link" href="#mainContent">Ir para o conteúdo principal</a>
 
   <section class="auth-gate" id="authGate" role="dialog" aria-modal="true" aria-labelledby="authTitle" aria-describedby="authDescription" hidden>
@@ -41,7 +42,7 @@
         </label>
         <label>
           Senha
-          <input type="password" id="authPassword" autocomplete="current-password" minlength="8" required>
+          <input type="password" id="authPassword" autocomplete="current-password" minlength="15" required>
         </label>
         <p class="auth-message" id="authMessage" role="status" aria-live="polite"></p>
         <button class="primary-button auth-submit" id="authSubmitButton" type="submit">Entrar</button>
@@ -108,16 +109,19 @@
 
     <main class="main" id="mainContent" tabindex="-1">
       <header class="topbar">
-        <div>
-          <h1>VILLAMOR • PÓS-VENDA VIP</h1>
+        <div class="topbar-context">
+          <p class="eyebrow" id="topbarEyebrow">Operação da carteira</p>
+          <h1 id="topbarTitle">Operacionalização</h1>
+          <p id="topbarDescription">Priorize contratos, registre contexto e acompanhe a exposição financeira.</p>
         </div>
         <div class="topbar-actions">
           <button class="secondary-button" id="refreshButton" type="button">Recalcular</button>
-          <label class="primary-button file-button">
+          <label class="primary-button file-button contextual-action" data-tabs="operational health">
             Atualização
             <input type="file" id="uploadInput" accept=".xlsx,.xls" aria-label="Selecionar planilha para atualização">
           </label>
-          <button class="primary-button" id="executiveReportButton" type="button">Relatório diretoria</button>
+          <button class="primary-button contextual-action" id="executiveReportButton" type="button" data-tabs="executive">Relatório diretoria</button>
+          <button class="secondary-button contextual-action" id="presentationModeButton" type="button" data-tabs="executive" aria-pressed="false">Modo apresentação</button>
         </div>
       </header>
 
@@ -172,18 +176,27 @@
           <button class="secondary-button" id="clearFiltersButton" type="button">Limpar filtros</button>
         </div>
       </section>
+      <div class="active-filter-chips" id="activeFilterChips" aria-label="Filtros ativos" aria-live="polite" hidden></div>
 
       <section class="tab-panel active" id="operationalPanel" role="region" aria-labelledby="operationalTab">
         <div class="section-header performance-section-header">
           <div class="performance-meter" id="operationalPerformance"></div>
-          <div class="table-actions">
-            <button class="danger-button" id="bulkTerminateButton" type="button">Distratar seleção</button>
+          <div class="operational-quick-actions">
+            <button class="secondary-button" id="priorityQueueButton" type="button">Abrir fila crítica 180+</button>
           </div>
         </div>
 
         <div class="metrics-row" id="operationalKpis" aria-live="polite"></div>
+        <button class="secondary-button kpi-disclosure-button" id="operationalKpiToggle" type="button" aria-expanded="false">Ver todos os indicadores</button>
 
         <div class="table-shell">
+          <div class="bulk-selection-bar" id="bulkSelectionBar" aria-live="polite" hidden>
+            <strong id="bulkSelectionCount">0 contratos selecionados</strong>
+            <div>
+              <button class="ghost-button" id="clearSelectionButton" type="button">Cancelar seleção</button>
+              <button class="danger-button" id="bulkTerminateButton" type="button">Distratar selecionados</button>
+            </div>
+          </div>
           <div class="table-toolbar">
             <strong id="tableSummary" aria-live="polite">0 contratos</strong>
             <div class="pagination-size">
@@ -196,6 +209,7 @@
               </select>
             </div>
           </div>
+          <div class="mobile-contract-list" id="contractsMobileList" aria-label="Contratos da carteira"></div>
           <div class="table-scroll" tabindex="0" aria-labelledby="tableSummary">
             <table class="data-table">
               <caption class="sr-only">Contratos da carteira conforme os filtros aplicados</caption>
@@ -398,61 +412,69 @@
           </div>
 
           <div class="executive-brief" id="executiveBrief"></div>
-          <div class="metrics-grid" id="executiveKpis" aria-live="polite"></div>
+          <div class="metrics-grid executive-primary-kpis" id="executivePrimaryKpis" aria-live="polite"></div>
 
-          <div class="dashboard-grid">
-            <article class="chart-panel wide">
-              <div class="panel-header">
-                <h3>Evolução da inadimplência</h3>
-              </div>
-              <canvas id="evolutionChart" role="img" aria-label="Gráfico da evolução da inadimplência"></canvas>
-            </article>
-            <article class="chart-panel">
-              <div class="panel-header">
-                <h3>Distribuição por categoria</h3>
-              </div>
-              <canvas id="categoryChart" role="img" aria-label="Gráfico de distribuição por categoria"></canvas>
-            </article>
-            <article class="chart-panel">
-              <div class="panel-header">
-                <h3>Distribuição financeira</h3>
-              </div>
-              <canvas id="donutChart" role="img" aria-label="Gráfico de distribuição financeira"></canvas>
-            </article>
-            <article class="chart-panel">
-              <div class="panel-header">
-                <h3>Funil operacional</h3>
-              </div>
-              <canvas id="funnelChart" role="img" aria-label="Gráfico do funil operacional"></canvas>
-            </article>
-            <article class="chart-panel">
-              <div class="panel-header">
-                <h3>Aging list</h3>
-              </div>
-              <canvas id="agingChart" role="img" aria-label="Gráfico de contratos por faixa de atraso"></canvas>
-            </article>
-            <article class="chart-panel wide">
-              <div class="panel-header">
-                <h3>Heatmap grupo/categoria</h3>
-              </div>
-              <div id="heatmapGrid" class="heatmap-grid"></div>
-            </article>
-          </div>
+          <details class="executive-disclosure" id="executiveDetails">
+            <summary>Indicadores complementares</summary>
+            <div class="metrics-grid" id="executiveKpis" aria-live="polite"></div>
+          </details>
 
-          <div class="executive-bottom">
-            <article class="chart-panel">
-              <div class="panel-header">
-                <h3>Top 20 inadimplentes</h3>
-              </div>
-              <div id="rankingTable" class="ranking-list"></div>
-            </article>
-            <article class="chart-panel insights-panel">
-              <div class="panel-header">
-                <h3>Insights estratégicos</h3>
-              </div>
-              <div id="insightsList" class="insights-list"></div>
-            </article>
-          </div>
+          <details class="executive-disclosure executive-analytics" id="executiveAnalytics" open>
+            <summary>Análises e concentrações</summary>
+            <div class="dashboard-grid">
+              <article class="chart-panel wide">
+                <div class="panel-header">
+                  <h3>Evolução da inadimplência</h3>
+                </div>
+                <canvas id="evolutionChart" role="img" aria-label="Gráfico da evolução da inadimplência"></canvas>
+              </article>
+              <article class="chart-panel">
+                <div class="panel-header">
+                  <h3>Distribuição por categoria</h3>
+                </div>
+                <canvas id="categoryChart" role="img" aria-label="Gráfico de distribuição por categoria"></canvas>
+              </article>
+              <article class="chart-panel">
+                <div class="panel-header">
+                  <h3>Distribuição financeira</h3>
+                </div>
+                <canvas id="donutChart" role="img" aria-label="Gráfico de distribuição financeira"></canvas>
+              </article>
+              <article class="chart-panel">
+                <div class="panel-header">
+                  <h3>Funil operacional</h3>
+                </div>
+                <canvas id="funnelChart" role="img" aria-label="Gráfico do funil operacional"></canvas>
+              </article>
+              <article class="chart-panel">
+                <div class="panel-header">
+                  <h3>Aging list</h3>
+                </div>
+                <canvas id="agingChart" role="img" aria-label="Gráfico de contratos por faixa de atraso"></canvas>
+              </article>
+              <article class="chart-panel wide">
+                <div class="panel-header">
+                  <h3>Heatmap grupo/categoria</h3>
+                </div>
+                <div id="heatmapGrid" class="heatmap-grid"></div>
+              </article>
+            </div>
+
+            <div class="executive-bottom">
+              <article class="chart-panel">
+                <div class="panel-header">
+                  <h3>Top 20 inadimplentes</h3>
+                </div>
+                <div id="rankingTable" class="ranking-list"></div>
+              </article>
+              <article class="chart-panel insights-panel">
+                <div class="panel-header">
+                  <h3>Insights estratégicos</h3>
+                </div>
+                <div id="insightsList" class="insights-list"></div>
+              </article>
+            </div>
+          </details>
         </div>
       </section>
     </main>
@@ -464,7 +486,9 @@
       <p class="modal-alert" id="terminateDialogDescription">Esta operação removerá o contrato dos indicadores ativos.</p>
       <label id="terminationContractField" hidden>
         Contrato
-        <select id="terminationContractSelect"></select>
+        <input type="search" id="terminationContractSearch" autocomplete="off" placeholder="Digite cliente, contrato, CPF ou telefone" aria-autocomplete="list" aria-controls="terminationContractResults">
+        <select id="terminationContractSelect" class="sr-only" tabindex="-1" aria-hidden="true"></select>
+        <div class="contract-search-results" id="terminationContractResults" role="listbox" aria-label="Contratos encontrados" hidden></div>
       </label>
       <div class="termination-contract-summary" id="terminationContractSummary"></div>
       <label class="termination-date-field">
@@ -578,5 +602,6 @@
     <span class="filter-fab-icon" aria-hidden="true"></span>
     <span class="filter-fab-badge" id="filterActiveCount" aria-hidden="true" hidden>0</span>
   </button>
+  <button class="presentation-exit" id="presentationExitButton" type="button" hidden>Sair da apresentação</button>
 </body>
 </html>

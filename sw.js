@@ -1,16 +1,17 @@
-const CACHE_NAME = "pos-venda-vip-v13";
+const CACHE_NAME = "pos-venda-vip-v15";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./offline.html",
   "./manifest.webmanifest",
-  "./css/style.css?v=20260613-2",
-  "./js/app.js?v=20260613-2",
+  "./css/style.css?v=20260613-4",
+  "./js/app.js?v=20260613-4",
   "./js/config.js",
-  "./js/data-provider.js?v=20260613-1",
+  "./js/data-provider.js?v=20260613-4",
   "./js/database.js?v=20260611-1",
-  "./js/supabase-client.js?v=20260611-1",
-  "./js/supabase-provider.js?v=20260613-1",
+  "./js/supabase-client.js?v=20260613-3",
+  "./js/supabase-provider.js?v=20260613-4",
+  "./js/mfa-dialog.js?v=20260613-2",
   "./js/storage.js?v=20260609-5",
   "./js/distratos.js?v=20260613-1",
   "./js/upload.js?v=20260609-4",
@@ -18,6 +19,8 @@ const APP_SHELL = [
   "./js/dashboard.js?v=20260609-7",
   "./js/insights.js?v=20260609-7",
   "./js/utils.js",
+  "./vendor/chart.umd.min.js?v=4.4.7",
+  "./vendor/xlsx.full.min.js?v=0.20.3",
   "./assets/logo.png",
   "./assets/icon-192.png",
   "./assets/icon-512.png"
