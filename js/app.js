@@ -1,5 +1,5 @@
-import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260612-6";
-import { DistratoService } from "./distratos.js?v=20260612-6";
+import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260613-1";
+import { DistratoService } from "./distratos.js?v=20260613-1";
 import { parseWorkbookFile } from "./upload.js?v=20260609-4";
 import { renderCharts } from "./charts.js";
 import { generateInsights } from "./insights.js?v=20260609-7";
@@ -200,6 +200,7 @@ function bindEvents() {
   const applyDebounced = debounce(() => {
     state.page = 1;
     renderAll();
+    updateFilterDock();
   }, 150);
 
   ["globalSearch", "categoryFilter", "groupFilter", "statusFilter", "agingFilter", "valueFilter"].forEach((id) => {
@@ -207,6 +208,12 @@ function bindEvents() {
   });
 
   document.getElementById("clearFiltersButton").addEventListener("click", clearFilters);
+  document.getElementById("filterToggleButton").addEventListener("click", toggleFilterPanel);
+  document.querySelectorAll("[data-close-filter-panel]").forEach((button) => {
+    button.addEventListener("click", closeFilterPanel);
+  });
+  document.addEventListener("pointerdown", handleFilterPanelOutsideClick);
+  document.addEventListener("keydown", handleFilterPanelKeydown);
   document.getElementById("refreshButton").addEventListener("click", refreshApplicationData);
   document.getElementById("pageSize").addEventListener("change", (event) => {
     state.pageSize = Number(event.target.value);
@@ -263,7 +270,10 @@ function bindEvents() {
   document.getElementById("executiveTerminationReportButton").addEventListener("click", () => printTerminationReport("executive"));
   document.getElementById("clearTerminationFiltersButton").addEventListener("click", clearTerminationFilters);
   ["terminationSearch", "terminationReasonFilter", "terminationApproachFilter", "terminationStartDate", "terminationEndDate"]
-    .forEach((id) => document.getElementById(id).addEventListener("input", renderTerminatedTable));
+    .forEach((id) => document.getElementById(id).addEventListener("input", () => {
+      renderTerminatedTable();
+      updateFilterDock();
+    }));
   document.getElementById("changeUserButton").addEventListener("click", changeUser);
   document.getElementById("themeToggle").addEventListener("click", toggleTheme);
   document.getElementById("installAppButton").addEventListener("click", installProgressiveWebApp);
@@ -345,6 +355,7 @@ function renderAll() {
   renderReversions();
   renderDataHealth();
   renderExecutive();
+  updateFilterDock();
 }
 
 function renderPerformanceMeters() {
@@ -376,14 +387,112 @@ function performanceMeterMarkup(percentage, current, total) {
 }
 
 function switchTab(target) {
+  closeFilterPanel(false);
   document.querySelectorAll(".nav-tab").forEach((button) => button.classList.toggle("active", button.dataset.tabTarget === target));
   document.getElementById("operationalPanel").classList.toggle("active", target === "operational");
   document.getElementById("terminationsPanel").classList.toggle("active", target === "terminations");
   document.getElementById("reversionsPanel").classList.toggle("active", target === "reversions");
   document.getElementById("healthPanel").classList.toggle("active", target === "health");
   document.getElementById("executivePanel").classList.toggle("active", target === "executive");
-  document.querySelector(".global-filters").hidden = !["operational", "executive"].includes(target);
+  document.body.dataset.activeTab = target;
+  updateFilterDock();
   if (target === "executive") setTimeout(() => renderExecutive(), 80);
+}
+
+const FILTER_TAB_CONFIG = {
+  operational: { panelId: "globalFilterPanel", label: "filtros da carteira" },
+  executive: { panelId: "globalFilterPanel", label: "filtros da carteira" },
+  terminations: { panelId: "terminationFilterPanel", label: "filtros de distratos" },
+};
+
+function activeFilterConfig() {
+  return FILTER_TAB_CONFIG[document.body.dataset.activeTab || "operational"] || null;
+}
+
+function toggleFilterPanel() {
+  const button = document.getElementById("filterToggleButton");
+  if (button.getAttribute("aria-expanded") === "true") {
+    closeFilterPanel();
+    return;
+  }
+  const config = activeFilterConfig();
+  if (!config) return;
+  closeFilterPanel(false);
+  const panel = document.getElementById(config.panelId);
+  panel.hidden = false;
+  panel.classList.add("is-open");
+  button.setAttribute("aria-expanded", "true");
+  button.setAttribute("aria-controls", config.panelId);
+  button.setAttribute("aria-label", `Fechar ${config.label}`);
+  document.body.classList.add("filter-panel-open");
+  panel.querySelector("input, select, button")?.focus({ preventScroll: true });
+}
+
+function closeFilterPanel(restoreFocus = true) {
+  document.querySelectorAll(".filter-popover").forEach((panel) => {
+    panel.classList.remove("is-open");
+    panel.hidden = true;
+  });
+  const button = document.getElementById("filterToggleButton");
+  if (!button) return;
+  const wasOpen = button.getAttribute("aria-expanded") === "true";
+  button.setAttribute("aria-expanded", "false");
+  document.body.classList.remove("filter-panel-open");
+  const config = activeFilterConfig();
+  button.setAttribute("aria-label", config ? `Abrir ${config.label}` : "Abrir filtros");
+  if (restoreFocus && wasOpen && !button.hidden) button.focus({ preventScroll: true });
+}
+
+function handleFilterPanelOutsideClick(event) {
+  const button = document.getElementById("filterToggleButton");
+  if (button.getAttribute("aria-expanded") !== "true") return;
+  const panel = document.querySelector(".filter-popover.is-open");
+  if (panel?.contains(event.target) || button.contains(event.target)) return;
+  closeFilterPanel(false);
+}
+
+function handleFilterPanelKeydown(event) {
+  if (event.key === "Escape" && document.getElementById("filterToggleButton").getAttribute("aria-expanded") === "true") {
+    event.preventDefault();
+    closeFilterPanel();
+  }
+}
+
+function updateFilterDock() {
+  const config = activeFilterConfig();
+  const button = document.getElementById("filterToggleButton");
+  if (!button) return;
+  button.hidden = !config;
+  document.body.classList.toggle("filter-dock-active", Boolean(config));
+  if (!config) {
+    closeFilterPanel(false);
+    return;
+  }
+  button.setAttribute("aria-controls", config.panelId);
+  button.setAttribute("aria-label", `${button.getAttribute("aria-expanded") === "true" ? "Fechar" : "Abrir"} ${config.label}`);
+  const count = config.panelId === "terminationFilterPanel" ? activeTerminationFilterCount() : activePortfolioFilterCount();
+  const badge = document.getElementById("filterActiveCount");
+  badge.textContent = String(count);
+  badge.hidden = count === 0;
+  button.classList.toggle("has-active-filters", count > 0);
+}
+
+function activePortfolioFilterCount() {
+  return [
+    document.getElementById("globalSearch").value.trim(),
+    ...["categoryFilter", "groupFilter", "statusFilter", "agingFilter", "valueFilter"]
+      .map((id) => document.getElementById(id).value === "all" ? "" : document.getElementById(id).value),
+  ].filter(Boolean).length;
+}
+
+function activeTerminationFilterCount() {
+  return [
+    document.getElementById("terminationSearch").value.trim(),
+    document.getElementById("terminationReasonFilter").value === "all" ? "" : document.getElementById("terminationReasonFilter").value,
+    document.getElementById("terminationApproachFilter").value === "all" ? "" : document.getElementById("terminationApproachFilter").value,
+    document.getElementById("terminationStartDate").value,
+    document.getElementById("terminationEndDate").value,
+  ].filter(Boolean).length;
 }
 
 function populateFilterOptions() {
@@ -1057,6 +1166,7 @@ function clearTerminationFilters() {
   document.getElementById("terminationReasonFilter").value = "all";
   document.getElementById("terminationApproachFilter").value = "all";
   renderTerminatedTable();
+  updateFilterDock();
 }
 
 function renderHistoricalTerminatedTable() {
@@ -1997,6 +2107,7 @@ function clearFilters() {
   });
   state.page = 1;
   renderAll();
+  updateFilterDock();
 }
 
 function toggleSelectPage(event) {
