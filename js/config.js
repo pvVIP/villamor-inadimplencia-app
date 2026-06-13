@@ -1,5 +1,5 @@
 export const APP_CONFIG = Object.freeze({
-  appName: "VILLAMOR INADIMPLÊNCIA",
+  appName: "PÓS-VENDA VIP",
   dataProvider: new URLSearchParams(window.location.search).get("mode") === "local"
     ? "local"
     : "supabase",

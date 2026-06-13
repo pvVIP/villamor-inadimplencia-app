@@ -1,5 +1,5 @@
-import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260612-5";
-import { DistratoService } from "./distratos.js?v=20260612-5";
+import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260612-6";
+import { DistratoService } from "./distratos.js?v=20260612-6";
 import { parseWorkbookFile } from "./upload.js?v=20260609-4";
 import { renderCharts } from "./charts.js";
 import { generateInsights } from "./insights.js?v=20260609-7";
@@ -1728,9 +1728,9 @@ function printTerminationReport(type) {
     return;
   }
   reportWindow.opener = null;
-  const period = terminationPeriodLabel();
+  const filterSummary = terminationFilterSummary();
   const logoUrl = new URL("assets/logo.png", window.location.href).href;
-  const title = type === "formal" ? "Relatório Formal de Distratos" : "Resumo Executivo de Distratos";
+  const title = type === "formal" ? "Relatório de Distratos" : "Resumo Executivo de Distratos";
   const body = type === "formal"
     ? formalTerminationReportMarkup(contracts, totals)
     : executiveTerminationReportMarkup(contracts, totals);
@@ -1744,10 +1744,10 @@ function printTerminationReport(type) {
       <body>
         <header>
           <img src="${escapeAttr(logoUrl)}" alt="Villamor">
-          <div><span>VILLAMOR · GESTÃO DA INADIMPLÊNCIA</span><h1>${escapeHtml(title)}</h1><p>${escapeHtml(period)} · Emitido em ${escapeHtml(formatDate(new Date().toISOString()))}</p></div>
+          <div><span>VILLAMOR · PÓS-VENDA VIP</span><h1>${escapeHtml(title)}</h1><p>${escapeHtml(filterSummary)} · Emitido em ${escapeHtml(formatDate(new Date().toISOString()))}</p></div>
         </header>
         ${body}
-        <footer>Documento gerado pelo VILLAMOR INADIMPLÊNCIA · Recuperado corresponde ao valor efetivamente retido.</footer>
+        <footer>Documento gerado pelo PÓS-VENDA VIP · Recuperado corresponde ao valor efetivamente retido.</footer>
         <script>window.addEventListener("load", () => setTimeout(() => window.print(), 250));<\/script>
       </body>
     </html>`);
@@ -1831,13 +1831,20 @@ function reportBars(entries, total) {
   `).join("") || "<p>Sem dados.</p>";
 }
 
-function terminationPeriodLabel() {
+function terminationFilterSummary() {
   const start = document.getElementById("terminationStartDate").value;
   const end = document.getElementById("terminationEndDate").value;
-  if (start && end) return `Período de ${formatDate(start)} a ${formatDate(end)}`;
-  if (start) return `A partir de ${formatDate(start)}`;
-  if (end) return `Até ${formatDate(end)}`;
-  return "Todos os lançamentos a partir de 07/05/2026";
+  const reason = selectedOptionLabel("terminationReasonFilter", "all");
+  const approach = selectedOptionLabel("terminationApproachFilter", "all");
+  const search = document.getElementById("terminationSearch").value.trim();
+  const filters = [];
+  if (start && end) filters.push(`Período: ${formatDate(start)} a ${formatDate(end)}`);
+  else if (start) filters.push(`Período: a partir de ${formatDate(start)}`);
+  else if (end) filters.push(`Período: até ${formatDate(end)}`);
+  if (reason) filters.push(`Motivo: ${reason}`);
+  if (approach) filters.push(`Abordagem: ${approach}`);
+  if (search) filters.push(`Busca: ${search}`);
+  return filters.length ? filters.join(" · ") : "Sem filtros adicionais";
 }
 
 function terminationReportStyles() {
@@ -1858,17 +1865,18 @@ function printExecutivePortfolioReport() {
   reportWindow.opener = null;
   const logoUrl = new URL("assets/logo.png", window.location.href).href;
   const complianceRate = kpis.totalActive ? kpis.totalCurrent / kpis.totalActive : 0;
+  const filterSummary = portfolioFilterSummary();
   reportWindow.document.write(`<!doctype html>
     <html lang="pt-BR">
       <head>
         <meta charset="utf-8">
-        <title>Relatório Executivo da Inadimplência</title>
+        <title>Relatório da Inadimplência</title>
         <style>${executivePortfolioReportStyles()}</style>
       </head>
       <body>
         <header>
           <img src="${escapeAttr(logoUrl)}" alt="Villamor">
-          <div><span>VILLAMOR · GESTÃO DA INADIMPLÊNCIA</span><h1>Relatório Executivo da Inadimplência</h1><p>Visão da carteira filtrada · Emitido em ${escapeHtml(formatDate(new Date().toISOString()))}</p></div>
+          <div><span>VILLAMOR · PÓS-VENDA VIP</span><h1>Relatório da Inadimplência</h1><p>Situação Atual da Inadimplência · Emitido em ${escapeHtml(formatDate(new Date().toISOString()))}</p>${filterSummary ? `<small class="report-filter-summary">${escapeHtml(filterSummary)}</small>` : ""}</div>
         </header>
         <section class="executive-metrics">
           ${reportMetric("Contratos ativos", kpis.totalActive, "", "Carteira filtrada")}
@@ -1886,11 +1894,35 @@ function printExecutivePortfolioReport() {
         </section>
         ${executiveProgressMarkup(complianceRate, kpis.totalCurrent, kpis.totalActive)}
         ${executiveAgingMarkup(aging)}
-        <footer>Documento gerado pelo VILLAMOR INADIMPLÊNCIA · Indicadores respeitam os filtros ativos no momento da emissão.</footer>
+        <footer>Documento gerado pelo PÓS-VENDA VIP · Indicadores respeitam os filtros ativos no momento da emissão.</footer>
         <script>window.addEventListener("load", () => setTimeout(() => window.print(), 250));<\/script>
       </body>
     </html>`);
   reportWindow.document.close();
+}
+
+function portfolioFilterSummary() {
+  const search = document.getElementById("globalSearch").value.trim();
+  const filters = [
+    search ? `Busca: ${search}` : "",
+    labeledFilter("categoryFilter", "Categoria"),
+    labeledFilter("groupFilter", "Grupo"),
+    labeledFilter("statusFilter", "Status"),
+    labeledFilter("agingFilter", "Atraso"),
+    labeledFilter("valueFilter", "Valor"),
+  ].filter(Boolean);
+  return filters.length ? `Filtros aplicados: ${filters.join(" · ")}` : "";
+}
+
+function labeledFilter(id, label) {
+  const value = selectedOptionLabel(id, "all");
+  return value ? `${label}: ${value}` : "";
+}
+
+function selectedOptionLabel(id, ignoredValue) {
+  const select = document.getElementById(id);
+  if (!select || select.value === ignoredValue) return "";
+  return select.selectedOptions[0]?.textContent?.trim() || select.value;
 }
 
 function executiveProgressMarkup(rate, current, total) {
@@ -1926,7 +1958,7 @@ function executiveAgingMarkup(rows) {
 
 function executivePortfolioReportStyles() {
   return `
-    @page{size:A4 landscape;margin:10mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{margin:0;color:#22262b;font:11px Arial,sans-serif;background:#fff}header{display:flex;align-items:center;gap:14px;padding-bottom:11px;border-bottom:3px solid #a62552}header img{width:58px;height:58px;border-radius:7px;object-fit:cover}header span,.portfolio-progress span,.aging-heading span{font-size:9px;font-weight:800;color:#a62552}h1{margin:3px 0;font-size:22px}header p,.portfolio-progress p{margin:0;color:#687078}.executive-metrics{display:grid;grid-template-columns:repeat(6,1fr);gap:7px;margin:12px 0}.report-metric{min-height:72px;padding:9px;border:1px solid #d9dde1;border-bottom:4px solid #a62552;border-radius:5px;background:#fff}.report-metric span{display:block;color:#8f2349;font-size:8px;font-weight:800;text-transform:uppercase}.report-metric strong{display:block;margin-top:5px;font-size:15px}.report-metric small{display:block;margin-top:4px;color:#667079;font-size:8px}.report-metric.tone-recovered{border-color:#b8e5cf;border-bottom-color:#079455;background:#f1fbf6}.report-metric.tone-recovered span{color:#087a49}.report-metric.tone-refund{border-color:#f0d78b;border-bottom-color:#d39b00;background:#fff9e8}.report-metric.tone-refund span{color:#9b7000}.report-metric.tone-danger{border-color:#efbdc7;border-bottom-color:#c72d4c;background:#fff4f6}.report-metric.tone-danger span{color:#b51f40}.report-metric.tone-closed{border-color:#d3d5d7;border-bottom-color:#7d858c;background:linear-gradient(135deg,#f1f2f2,#fffdf6)}.report-metric.tone-closed span{color:#596168}.portfolio-progress{display:grid;grid-template-columns:1fr auto;gap:4px 16px;padding:12px 14px;border:1px solid #d8dde1;border-radius:6px;background:#f8fafb}.portfolio-progress h2,.aging-heading h2{margin:3px 0;font-size:17px}.portfolio-progress>strong{align-self:center;color:#087a49;font-size:25px}.progress-track{grid-column:1/-1;height:11px;overflow:hidden;border-radius:6px;background:#dfe4e7}.progress-track i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#087a49,#45d79a)}.aging-report{margin-top:10px;padding:11px 14px;border:1px solid #d8dde1;border-radius:6px}.aging-heading{display:flex;align-items:flex-end;justify-content:space-between}.aging-heading small{color:#687078}.aging-bars{display:grid;grid-template-columns:repeat(5,1fr);gap:18px;height:140px;margin-top:8px;padding:4px 18px 0;border-bottom:1px solid #cfd5d9;background:repeating-linear-gradient(to top,transparent 0,transparent 27px,#e8ebed 28px)}.aging-bars article{display:grid;grid-template-rows:15px 1fr 15px 13px;min-width:0;text-align:center}.aging-bars strong{font-size:11px}.aging-column{display:flex;align-items:flex-end;justify-content:center;height:92px}.aging-column i{display:block;width:62%;min-height:2px;border-radius:6px 6px 0 0;background:linear-gradient(180deg,#e36767,#c74451)}.aging-bars span{font-weight:700}.aging-bars small{overflow:hidden;color:#687078;font-size:7px;text-overflow:ellipsis;white-space:nowrap}footer{margin-top:9px;padding-top:6px;border-top:1px solid #ddd;color:#737b82;font-size:8px;text-align:center}@media print{button{display:none}}`;
+    @page{size:A4 landscape;margin:10mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{margin:0;color:#22262b;font:11px Arial,sans-serif;background:#fff}header{display:flex;align-items:center;gap:14px;padding-bottom:11px;border-bottom:3px solid #a62552}header img{width:58px;height:58px;border-radius:7px;object-fit:cover}header span,.portfolio-progress span,.aging-heading span{font-size:9px;font-weight:800;color:#a62552}h1{margin:3px 0;font-size:22px}header p,.portfolio-progress p{margin:0;color:#687078}.report-filter-summary{display:block;margin-top:4px;color:#8b596a;font-size:8px;font-weight:700}.executive-metrics{display:grid;grid-template-columns:repeat(6,1fr);gap:7px;margin:12px 0}.report-metric{min-height:72px;padding:9px;border:1px solid #d9dde1;border-bottom:4px solid #a62552;border-radius:5px;background:#fff}.report-metric span{display:block;color:#8f2349;font-size:8px;font-weight:800;text-transform:uppercase}.report-metric strong{display:block;margin-top:5px;font-size:15px}.report-metric small{display:block;margin-top:4px;color:#667079;font-size:8px}.report-metric.tone-recovered{border-color:#b8e5cf;border-bottom-color:#079455;background:#f1fbf6}.report-metric.tone-recovered span{color:#087a49}.report-metric.tone-refund{border-color:#f0d78b;border-bottom-color:#d39b00;background:#fff9e8}.report-metric.tone-refund span{color:#9b7000}.report-metric.tone-danger{border-color:#efbdc7;border-bottom-color:#c72d4c;background:#fff4f6}.report-metric.tone-danger span{color:#b51f40}.report-metric.tone-closed{border-color:#d3d5d7;border-bottom-color:#7d858c;background:linear-gradient(135deg,#f1f2f2,#fffdf6)}.report-metric.tone-closed span{color:#596168}.portfolio-progress{display:grid;grid-template-columns:1fr auto;gap:4px 16px;padding:12px 14px;border:1px solid #d8dde1;border-radius:6px;background:#f8fafb}.portfolio-progress h2,.aging-heading h2{margin:3px 0;font-size:17px}.portfolio-progress>strong{align-self:center;color:#087a49;font-size:25px}.progress-track{grid-column:1/-1;height:11px;overflow:hidden;border-radius:6px;background:#dfe4e7}.progress-track i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#087a49,#45d79a)}.aging-report{margin-top:10px;padding:11px 14px;border:1px solid #d8dde1;border-radius:6px}.aging-heading{display:flex;align-items:flex-end;justify-content:space-between}.aging-heading small{color:#687078}.aging-bars{display:grid;grid-template-columns:repeat(5,1fr);gap:18px;height:140px;margin-top:8px;padding:4px 18px 0;border-bottom:1px solid #cfd5d9;background:repeating-linear-gradient(to top,transparent 0,transparent 27px,#e8ebed 28px)}.aging-bars article{display:grid;grid-template-rows:15px 1fr 15px 13px;min-width:0;text-align:center}.aging-bars strong{font-size:11px}.aging-column{display:flex;align-items:flex-end;justify-content:center;height:92px}.aging-column i{display:block;width:62%;min-height:2px;border-radius:6px 6px 0 0;background:linear-gradient(180deg,#e36767,#c74451)}.aging-bars span{font-weight:700}.aging-bars small{overflow:hidden;color:#687078;font-size:7px;text-overflow:ellipsis;white-space:nowrap}footer{margin-top:9px;padding-top:6px;border-top:1px solid #ddd;color:#737b82;font-size:8px;text-align:center}@media print{button{display:none}}`;
 }
 
 async function changeUser() {

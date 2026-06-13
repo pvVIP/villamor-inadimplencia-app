@@ -1,7 +1,7 @@
 {
-  "name": "VILLAMOR INADIMPLÊNCIA",
-  "short_name": "VILLAMOR",
-  "description": "Gestão estratégica da inadimplência Villamor.",
+  "name": "PÓS-VENDA VIP",
+  "short_name": "PÓS-VENDA VIP",
+  "description": "Pós-venda VIP Villamor: operação, contratos e gestão da inadimplência.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
