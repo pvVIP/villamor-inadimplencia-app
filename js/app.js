@@ -1,4 +1,4 @@
-import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260614-1";
+import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260614-2";
 import { DistratoService } from "./distratos.js?v=20260613-1";
 import { parseWorkbookFile } from "./upload.js?v=20260609-4";
 import { renderCharts } from "./charts.js";
@@ -62,6 +62,19 @@ async function boot() {
   bindAuthEvents();
   bindEvents();
   setupProgressiveWebApp();
+  const authRedirectError = db.consumeAuthRedirectError?.();
+  if (authRedirectError) {
+    showAuthGate();
+    setAuthMessage("Este link de recuperação expirou ou já foi utilizado. Solicite um novo link.");
+    return;
+  }
+  if (db.consumePasswordRecovery?.()) {
+    state.authMode = "reset";
+    syncAuthMode();
+    showAuthGate();
+    setAuthMessage("Link confirmado. Crie uma nova senha com pelo menos 15 caracteres.", true);
+    return;
+  }
   try {
     await db.init();
   } catch (error) {
@@ -111,6 +124,10 @@ async function initializeApplication() {
 
 function bindAuthEvents() {
   document.getElementById("authForm").addEventListener("submit", handleAuthentication);
+  document.getElementById("authForgotButton").addEventListener("click", () => {
+    state.authMode = "forgot";
+    syncAuthMode();
+  });
   document.getElementById("authModeButton").addEventListener("click", () => {
     state.authMode = state.authMode === "signin" ? "signup" : "signin";
     syncAuthMode();
@@ -135,6 +152,24 @@ async function handleAuthentication(event) {
         setAuthMessage("Cadastro criado. Confirme o e-mail recebido e depois entre no sistema.", true);
         return;
       }
+    } else if (state.authMode === "forgot") {
+      await db.requestPasswordReset(email, `${window.location.origin}${window.location.pathname}`);
+      state.authMode = "signin";
+      syncAuthMode();
+      setAuthMessage(
+        "Se este e-mail estiver cadastrado, enviaremos um link para criar uma nova senha. Verifique também o spam.",
+        true,
+      );
+      return;
+    } else if (state.authMode === "reset") {
+      const confirmation = document.getElementById("authConfirmPassword").value;
+      if (password !== confirmation) throw new Error("As duas senhas precisam ser iguais.");
+      await db.updatePassword(password);
+      await db.signOut();
+      state.authMode = "signin";
+      syncAuthMode();
+      setAuthMessage("Senha alterada. Entre novamente usando a nova senha.", true);
+      return;
     } else {
       await db.signIn(email, password);
     }
@@ -156,7 +191,7 @@ function showAuthGate(error) {
   } else if (error?.code !== "AUTH_REQUIRED" && error?.message) {
     setAuthMessage(error.message);
   }
-  document.getElementById("authEmail").focus();
+  document.getElementById(state.authMode === "reset" ? "authPassword" : "authEmail").focus();
 }
 
 function hideAuthGate() {
@@ -168,13 +203,36 @@ function hideAuthGate() {
 
 function syncAuthMode() {
   const signup = state.authMode === "signup";
+  const forgot = state.authMode === "forgot";
+  const reset = state.authMode === "reset";
+  const email = document.getElementById("authEmail");
   const password = document.getElementById("authPassword");
+  const confirmation = document.getElementById("authConfirmPassword");
   document.getElementById("authNameField").hidden = !signup;
-  document.getElementById("authSubmitButton").textContent = signup ? "Criar acesso" : "Entrar";
-  document.getElementById("authModeButton").textContent = signup ? "Já tenho acesso" : "Criar primeiro acesso";
-  password.autocomplete = signup ? "new-password" : "current-password";
-  if (signup) password.minLength = 15;
+  document.getElementById("authEmailField").hidden = reset;
+  document.getElementById("authPasswordField").hidden = forgot;
+  document.getElementById("authConfirmPasswordField").hidden = !reset;
+  document.getElementById("authForgotButton").hidden = state.authMode !== "signin";
+  document.getElementById("authModeButton").hidden = reset;
+  document.getElementById("authSubmitButton").textContent = signup
+    ? "Criar acesso"
+    : forgot
+      ? "Enviar link de recuperação"
+      : reset
+        ? "Salvar nova senha"
+        : "Entrar";
+  document.getElementById("authModeButton").textContent = state.authMode === "signin"
+    ? "Criar primeiro acesso"
+    : "Voltar para entrar";
+  email.required = !reset;
+  password.required = !forgot;
+  password.autocomplete = signup || reset ? "new-password" : "current-password";
+  confirmation.required = reset;
+  if (signup || reset) password.minLength = 15;
   else password.removeAttribute("minlength");
+  if (reset) confirmation.minLength = 15;
+  else confirmation.removeAttribute("minlength");
+  if (!reset) confirmation.value = "";
   setAuthMessage("");
 }
 
@@ -190,6 +248,12 @@ function authErrorMessage(error) {
   if (/invalid login credentials/i.test(message)) return "E-mail ou senha incorretos.";
   if (/email not confirmed/i.test(message)) return "Confirme o e-mail recebido antes de entrar.";
   if (/user already registered/i.test(message)) return "Este e-mail já possui cadastro. Use a opção Entrar.";
+  if (/rate limit|security purposes|over_email_send_rate_limit/i.test(message)) {
+    return "O limite temporário de e-mails foi atingido. Aguarde alguns minutos antes de solicitar outro link.";
+  }
+  if (/password.*15|at least 15|weak password/i.test(message)) {
+    return "A nova senha precisa ter pelo menos 15 caracteres.";
+  }
   return message || "Não foi possível autenticar agora.";
 }
 

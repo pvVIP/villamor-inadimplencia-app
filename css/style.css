@@ -131,6 +131,25 @@ button {
   min-height: 44px;
 }
 
+.auth-forgot-button {
+  justify-self: center;
+  min-height: 36px;
+  padding: 4px 10px;
+  border: 0;
+  background: transparent;
+  color: #ffb5c8;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.auth-forgot-button:hover,
+.auth-forgot-button:focus-visible {
+  color: #fff;
+}
+
 .auth-message {
   min-height: 20px;
   margin: 0;

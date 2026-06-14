@@ -47,6 +47,53 @@ export class SupabaseClient {
     return result;
   }
 
+  async requestPasswordReset(email, redirectTo) {
+    const query = redirectTo ? `?redirect_to=${encodeURIComponent(redirectTo)}` : "";
+    return this.authRequest(`/recover${query}`, {
+      method: "POST",
+      body: { email },
+    });
+  }
+
+  consumePasswordRecovery() {
+    const parameters = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    if (parameters.get("type") !== "recovery") return false;
+
+    const accessToken = parameters.get("access_token");
+    const refreshToken = parameters.get("refresh_token");
+    if (!accessToken || !refreshToken) return false;
+
+    this.saveSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      token_type: parameters.get("token_type") || "bearer",
+      expires_in: Number(parameters.get("expires_in") || 3600),
+      expires_at: Math.round(Date.now() / 1000) + Number(parameters.get("expires_in") || 3600),
+      user: decodeJwtPayload(accessToken)?.sub
+        ? { id: decodeJwtPayload(accessToken).sub }
+        : null,
+    });
+    history.replaceState(null, document.title, `${window.location.pathname}${window.location.search}`);
+    return true;
+  }
+
+  consumeAuthRedirectError() {
+    const parameters = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const description = parameters.get("error_description");
+    if (!description) return "";
+    history.replaceState(null, document.title, `${window.location.pathname}${window.location.search}`);
+    return description;
+  }
+
+  async updatePassword(password) {
+    const user = await this.authUserRequest("/user", {
+      method: "PUT",
+      body: JSON.stringify({ password }),
+    });
+    if (this.session) this.saveSession({ ...this.session, user });
+    return user;
+  }
+
   async signOut() {
     if (this.session?.access_token) {
       await fetch(`${this.url}/auth/v1/logout`, {

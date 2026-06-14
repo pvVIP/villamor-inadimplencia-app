@@ -1,6 +1,6 @@
 import { Database } from "./database.js?v=20260611-1";
 import { requestTotpVerification } from "./mfa-dialog.js?v=20260614-1";
-import { SupabaseClient } from "./supabase-client.js?v=20260613-3";
+import { SupabaseClient } from "./supabase-client.js?v=20260614-1";
 import { enrichContract, todayIso } from "./utils.js";
 
 export class SupabaseProvider extends Database {
@@ -28,6 +28,22 @@ export class SupabaseProvider extends Database {
 
   async signUp(email, password, displayName) {
     return this.client.signUp(email, password, displayName);
+  }
+
+  async requestPasswordReset(email, redirectTo) {
+    return this.client.requestPasswordReset(email, redirectTo);
+  }
+
+  consumePasswordRecovery() {
+    return this.client.consumePasswordRecovery();
+  }
+
+  consumeAuthRedirectError() {
+    return this.client.consumeAuthRedirectError();
+  }
+
+  async updatePassword(password) {
+    return this.client.updatePassword(password);
   }
 
   async signOut() {

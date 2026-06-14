@@ -15,10 +15,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20260613-4">
+  <link rel="stylesheet" href="css/style.css?v=20260614-1">
   <script src="vendor/chart.umd.min.js?v=4.4.7" defer></script>
   <script src="vendor/xlsx.full.min.js?v=0.20.3" defer></script>
-  <script src="js/app.js?v=20260614-2" type="module"></script>
+  <script src="js/app.js?v=20260614-3" type="module"></script>
 </head>
 <body data-active-tab="operational">
   <a class="skip-link" href="#mainContent">Ir para o conteúdo principal</a>
@@ -36,16 +36,21 @@
           Nome
           <input type="text" id="authDisplayName" autocomplete="name" placeholder="Seu nome">
         </label>
-        <label>
+        <label id="authEmailField">
           E-mail
           <input type="email" id="authEmail" autocomplete="email" required placeholder="nome@empresa.com">
         </label>
-        <label>
+        <label id="authPasswordField">
           Senha
           <input type="password" id="authPassword" autocomplete="current-password" required>
         </label>
+        <label id="authConfirmPasswordField" hidden>
+          Confirmar nova senha
+          <input type="password" id="authConfirmPassword" autocomplete="new-password">
+        </label>
         <p class="auth-message" id="authMessage" role="status" aria-live="polite"></p>
         <button class="primary-button auth-submit" id="authSubmitButton" type="submit">Entrar</button>
+        <button class="auth-forgot-button" id="authForgotButton" type="button">Esqueci minha senha</button>
         <button class="secondary-button auth-mode-button" id="authModeButton" type="button">Criar primeiro acesso</button>
       </form>
       <small class="auth-security">Contas novas dependem de aprovação. Os dados permanecem protegidos no Supabase.</small>
