@@ -246,8 +246,8 @@ export class Database {
     const currentMap = new Map(current.map((item) => [item.contractId, item]));
     const terminatedMap = new Map(terminated.map((item) => [item.contractId, item]));
     const activeIncoming = incomingContracts.filter((item) => isActiveSourceStatus(item.sourceStatus));
-    const sourceTerminations = incomingContracts.filter((item) => item.sourceTerminated);
-    const sourceReversions = incomingContracts.filter((item) => item.sourceReverted);
+    const sourceTerminations = incomingContracts.filter((item) => !isActiveSourceStatus(item.sourceStatus) && item.sourceTerminated);
+    const sourceReversions = incomingContracts.filter((item) => !isActiveSourceStatus(item.sourceStatus) && item.sourceReverted);
     const sourceExceptions = incomingContracts.filter((item) => (
       !isActiveSourceStatus(item.sourceStatus)
       && !item.sourceTerminated

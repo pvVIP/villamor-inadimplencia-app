@@ -1,6 +1,6 @@
-import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260615-1";
+import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260616-1";
 import { DistratoService } from "./distratos.js?v=20260615-1";
-import { parseWorkbookFile } from "./upload.js?v=20260614-1";
+import { parseWorkbookFile } from "./upload.js?v=20260616-1";
 import { renderCharts } from "./charts.js";
 import { generateInsights } from "./insights.js?v=20260609-7";
 import {
@@ -29,6 +29,7 @@ const state = {
   contracts: [],
   terminated: [],
   historicalTerminated: [],
+  activeTerminationConflicts: [],
   reversions: [],
   sourceExceptions: [],
   filtered: [],
@@ -454,7 +455,14 @@ async function installProgressiveWebApp() {
 async function reload() {
   state.contracts = (await db.getContracts()).map(enrichContract);
   state.terminated = (await db.getTerminatedContracts()).map(enrichContract);
-  state.historicalTerminated = (await db.getSourceTerminations()).map(enrichContract);
+  const activeIds = new Set(state.contracts.map((contract) => contract.contractId));
+  const sourceTerminations = (await db.getSourceTerminations()).map(enrichContract);
+  state.activeTerminationConflicts = sourceTerminations.filter((contract) => (
+    activeIds.has(contract.contractId)
+    || normalizeReportText(contract.sourceStatus) === "ativo"
+  ));
+  const conflictIds = new Set(state.activeTerminationConflicts.map((contract) => contract.contractId));
+  state.historicalTerminated = sourceTerminations.filter((contract) => !conflictIds.has(contract.contractId));
   state.reversions = (await db.getSourceReversions()).map(enrichContract);
   state.sourceExceptions = (await db.getSourceExceptions()).map(enrichContract);
   populateFilterOptions();
@@ -1843,7 +1851,7 @@ function renderDataHealth() {
   const informative = alerts.filter((alert) => alert.level === "info");
   const totalRecords = Math.max(
     1,
-    state.contracts.length + state.historicalTerminated.length + state.reversions.length + state.sourceExceptions.length,
+    state.contracts.length + state.historicalTerminated.length + state.reversions.length + state.sourceExceptions.length + state.activeTerminationConflicts.length,
   );
   const impact = alerts.reduce((total, alert) => {
     const weight = alert.level === "critical" ? 1.5 : alert.level === "warning" ? 0.65 : 0.15;
@@ -1898,6 +1906,7 @@ function buildDataHealthAlerts() {
   const reversionsWithoutOrigin = state.reversions.filter((contract) => !String(contract.originReversal || "").trim());
   const terminationsWithoutDate = state.historicalTerminated.filter((contract) => !contract.sourceTerminationDate);
   const terminationsWithoutReason = state.historicalTerminated.filter((contract) => !String(contract.sourceTerminationReason || "").trim());
+  const activeTerminationConflicts = state.activeTerminationConflicts || [];
   const sourceContracts = [...state.contracts, ...state.historicalTerminated, ...state.reversions, ...state.sourceExceptions];
   const codeCounts = new Map();
   sourceContracts.forEach((contract) => {
@@ -1915,6 +1924,9 @@ function buildDataHealthAlerts() {
   addHealthAlert(alerts, "critical", "Status de origem não reconhecido", state.sourceExceptions.length,
     "Esses registros foram preservados, mas ficaram fora dos indicadores porque não são Ativo, Cancelado ou Revertido.",
     "Confira os valores da coluna Status e informe novos padrões válidos para classificação.");
+  addHealthAlert(alerts, "critical", "Distratos conflitantes com carteira ativa", activeTerminationConflicts.length,
+    `Existem registros no histórico de distratos que também constam como ativos. O sistema bloqueou a exibição desses distratos. Exemplos: ${conflictExamples(activeTerminationConflicts)}.`,
+    "Reaplique a base atual para limpar a origem e confira a coluna Status na base de contratos.");
   addHealthAlert(alerts, "critical", "Inadimplência sem próximo vencimento", overdueWithoutDate.length,
     "O aging não pode ser calculado com segurança quando há valor em atraso sem data de próximo vencimento.",
     "Corrija a data na base de origem antes da próxima atualização.");
@@ -1944,6 +1956,12 @@ function buildDataHealthAlerts() {
 
 function addHealthAlert(alerts, level, title, count, detail, action) {
   if (count > 0) alerts.push({ level, title, count, detail, action });
+}
+
+function conflictExamples(contracts) {
+  return contracts.slice(0, 3)
+    .map((contract) => `${contractDisplayCode(contract)} / Localizador ${contractLocalizer(contract)}`)
+    .join(", ") || "não informado";
 }
 
 function bindTerminatedMetricHover() {
@@ -1995,13 +2013,14 @@ function getProductionTerminations() {
 
 function getUnifiedTerminations() {
   const manualIds = new Set(state.terminated.map((item) => item.contractId));
+  const activeIds = new Set(state.contracts.map((item) => item.contractId));
   const manual = state.terminated.map((item) => ({
     ...item,
     reconciliationStatus: item.reconciliationStatus || "manual_pending",
     sourceOnlyTermination: false,
   }));
   const identified = state.historicalTerminated
-    .filter((item) => !manualIds.has(item.contractId))
+    .filter((item) => !manualIds.has(item.contractId) && !activeIds.has(item.contractId) && normalizeReportText(item.sourceStatus) !== "ativo")
     .map((item) => {
       const reason = item.sourceTerminationReason || "Não informado";
       return enrichContract({

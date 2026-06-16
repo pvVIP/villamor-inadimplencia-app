@@ -244,11 +244,14 @@ function validateRows(rows, resolvedHeaders, importSummary = {}) {
   const clientHeader = resolvedHeaders.get("primaryClient");
   const totalHeader = resolvedHeaders.get("totalUpdatedValue");
   const overdueHeader = resolvedHeaders.get("overdueValue");
+  const terminationDateHeader = resolvedHeaders.get("sourceTerminationDate");
+  const terminationReasonHeader = resolvedHeaders.get("sourceTerminationReason");
   const seen = new Set();
   let negativeTotalCount = 0;
   let negativeOverdueCount = 0;
   let missingClientCount = 0;
   let missingContractCodeCount = 0;
+  let activeWithTerminationEvidenceCount = 0;
   const contractCodeCounts = new Map();
   const unknownStatuses = new Map();
 
@@ -281,6 +284,12 @@ function validateRows(rows, resolvedHeaders, importSummary = {}) {
     else if (reverted) statusCounts.reverted += 1;
     else if (terminated) statusCounts.terminated += 1;
     else statusCounts.unknown += 1;
+    if (status === "ativo" && (
+      (terminationDateHeader && row[terminationDateHeader])
+      || (terminationReasonHeader && row[terminationReasonHeader])
+    )) {
+      activeWithTerminationEvidenceCount += 1;
+    }
     if (!recognized) unknownStatuses.set(status || "vazio", (unknownStatuses.get(status || "vazio") || 0) + 1);
   });
 
@@ -313,6 +322,9 @@ function validateRows(rows, resolvedHeaders, importSummary = {}) {
     const summary = [...unknownStatuses.entries()].map(([status, count]) => `${status}: ${count}`).join(", ");
     warnings.push(`Status ainda não classificados (${summary}). Esses registros serão preservados em Alertas de Dados e ficarão fora dos indicadores.`);
   }
+  if (activeWithTerminationEvidenceCount) {
+    warnings.push(`${activeWithTerminationEvidenceCount} registros estão com status Ativo e dados de cancelamento/distrato preenchidos. O status Ativo prevalecerá e esses contratos não entrarão na aba Distratos.`);
+  }
 
   return {
     ok: errors.length === 0,
@@ -328,6 +340,7 @@ function validateRows(rows, resolvedHeaders, importSummary = {}) {
       duplicateRows: [...contractCodeCounts.values()].filter((count) => count > 1)
         .reduce((total, count) => total + count, 0),
     },
+    activeWithTerminationEvidence: activeWithTerminationEvidenceCount,
   };
 }
 
@@ -410,7 +423,19 @@ function normalizeImportedRow(row, resolvedHeaders) {
 
 function detectSourceTermination(row, output) {
   const entries = Object.entries(row);
-  const statusText = normalizeHeader(`${output.sourceStatus || ""} ${output.financialStatus || ""}`);
+  const sourceStatus = normalizeHeader(output.sourceStatus || "");
+  if (sourceStatus === "ativo") {
+    return {
+      sourceTerminated: false,
+      sourceReverted: false,
+      sourceTerminationDate: null,
+      sourceReversalDate: null,
+      sourceTerminationReason: null,
+      sourceTerminationOrigin: null,
+    };
+  }
+
+  const statusText = sourceStatus;
   const terminatedByStatus = ["distrat", "cancelad", "rescind", "rescis"].some((term) => statusText.includes(term));
   const revertedByStatus = ["revertid", "reativad", "restaurad"].some((term) => statusText.includes(term));
 
