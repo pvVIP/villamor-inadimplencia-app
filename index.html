@@ -15,10 +15,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20260619-1">
+  <link rel="stylesheet" href="css/style.css?v=20260620-1">
   <script src="vendor/chart.umd.min.js?v=4.4.7" defer></script>
   <script src="vendor/xlsx.full.min.js?v=0.20.3" defer></script>
-  <script src="js/app.js?v=20260619-1" type="module"></script>
+  <script src="js/app.js?v=20260620-1" type="module"></script>
 </head>
 <body data-active-tab="operational">
   <a class="skip-link" href="#mainContent">Ir para o conteúdo principal</a>
@@ -90,6 +90,11 @@
           <span class="nav-icon" aria-hidden="true">◈</span>
           <span class="nav-label">PAINEL DA INADIMPLÊNCIA</span>
         </button>
+        <button class="nav-tab" id="settingsTab" type="button" data-tab-target="settings" aria-controls="settingsPanel" aria-label="Configurações" title="Configurações">
+          <span class="nav-icon" aria-hidden="true">⚙</span>
+          <span class="nav-label">CONFIGURAÇÕES</span>
+          <span class="nav-notification-badge" id="settingsNotificationBadge" aria-hidden="true" hidden>0</span>
+        </button>
       </nav>
       <div class="sidebar-card profile-summary">
         <img class="profile-avatar" id="currentUserAvatar" src="assets/shortcut-logo.png" alt="">
@@ -100,7 +105,6 @@
           <small id="dataModeLabel">Dados neste dispositivo</small>
         </div>
         <div class="profile-summary-actions">
-          <button class="ghost-button compact" id="editProfileButton" type="button">Editar perfil</button>
           <button class="ghost-button compact" id="changeUserButton" type="button">Alterar</button>
         </div>
       </div>
@@ -111,10 +115,6 @@
         </div>
         <button class="ghost-button install-app-button" id="installAppButton" type="button" hidden>
           Instalar aplicativo
-        </button>
-        <button class="theme-toggle" id="themeToggle" type="button" aria-pressed="false">
-          <span class="theme-toggle-icon" aria-hidden="true">◐</span>
-          <span id="themeToggleLabel">Modo escuro</span>
         </button>
       </div>
     </aside>
@@ -127,7 +127,7 @@
           <p id="topbarDescription">Priorize contratos, registre contexto e acompanhe a exposição financeira.</p>
         </div>
         <div class="topbar-actions">
-          <button class="secondary-button" id="refreshButton" type="button">Recalcular</button>
+          <button class="secondary-button contextual-action" id="refreshButton" type="button" data-tabs="operational terminations reversions health executive">Recalcular</button>
           <label class="primary-button file-button contextual-action" data-tabs="operational health">
             Atualização
             <input type="file" id="uploadInput" accept=".xlsx,.xls" aria-label="Selecionar planilha para atualização">
@@ -482,6 +482,159 @@
             </div>
           </details>
         </div>
+      </section>
+
+      <section class="tab-panel settings-panel" id="settingsPanel" role="region" aria-labelledby="settingsTab">
+        <div class="settings-grid">
+          <article class="settings-card settings-profile-card">
+            <div class="settings-card-heading">
+              <div>
+                <p class="eyebrow">Conta pessoal</p>
+                <h2>Perfil</h2>
+              </div>
+              <span class="settings-card-icon" aria-hidden="true">◎</span>
+            </div>
+            <div class="settings-profile-summary">
+              <img id="settingsProfileAvatar" src="assets/shortcut-logo.png" alt="">
+              <div>
+                <strong id="settingsProfileName">Operador Local</strong>
+                <span id="settingsProfileJobTitle">Sucesso do Cliente</span>
+                <small id="settingsProfileRole">Operador</small>
+              </div>
+            </div>
+            <button class="primary-button" id="editProfileButton" type="button">Editar perfil</button>
+          </article>
+
+          <article class="settings-card">
+            <div class="settings-card-heading">
+              <div>
+                <p class="eyebrow">Preferência visual</p>
+                <h2>Aparência</h2>
+              </div>
+              <span class="settings-card-icon" aria-hidden="true">◐</span>
+            </div>
+            <p class="settings-card-description">Alterne o tema sem perder seus filtros ou a tela em uso.</p>
+            <button class="theme-toggle settings-theme-toggle" id="themeToggle" type="button" aria-pressed="false">
+              <span class="theme-toggle-icon" aria-hidden="true">◐</span>
+              <span id="themeToggleLabel">Usar modo escuro</span>
+            </button>
+          </article>
+
+          <article class="settings-card settings-update-card">
+            <div class="settings-card-heading">
+              <div>
+                <p class="eyebrow">Aplicativo instalado</p>
+                <h2>Atualizações</h2>
+              </div>
+              <span class="settings-card-icon" aria-hidden="true">↻</span>
+            </div>
+            <div class="system-version-row">
+              <span>Versão instalada</span>
+              <strong id="systemVersionLabel">2026.06.19</strong>
+            </div>
+            <div class="system-update-status" id="systemUpdateStatus" role="status" aria-live="polite">
+              <span class="system-update-dot" aria-hidden="true"></span>
+              <div>
+                <strong id="systemUpdateTitle">Sistema atualizado</strong>
+                <small id="systemUpdateDescription">Você está usando a versão mais recente disponível.</small>
+              </div>
+            </div>
+            <div class="settings-update-actions">
+              <button class="secondary-button" id="checkForUpdatesButton" type="button">Verificar atualização</button>
+              <button class="primary-button" id="applySystemUpdateButton" type="button" hidden>Atualizar agora</button>
+            </div>
+          </article>
+        </div>
+
+        <section class="access-admin-section" id="accessAdminSection" aria-labelledby="accessAdminTitle" hidden>
+          <div class="access-admin-hero">
+            <div class="access-admin-heading">
+              <span class="access-admin-icon" aria-hidden="true">◆</span>
+              <div>
+                <p class="eyebrow">Central administrativa</p>
+                <h2 id="accessAdminTitle">Gestão de usuários</h2>
+                <p class="section-description">Aprove acessos, distribua responsabilidades e bloqueie contas com rastreabilidade.</p>
+              </div>
+            </div>
+            <div class="access-admin-assurances" aria-label="Proteções da gestão de acessos">
+              <span>RBAC por papel</span>
+              <span>Auditoria ativa</span>
+              <span>Conta principal protegida</span>
+            </div>
+            <button class="secondary-button access-refresh-button" id="refreshAccessUsersButton" type="button">
+              <span aria-hidden="true">↻</span>
+              Atualizar usuários
+            </button>
+          </div>
+
+          <div class="metrics-row access-summary" id="accessSummary" aria-live="polite"></div>
+
+          <div class="access-pending-banner" id="accessPendingBanner" hidden>
+            <div>
+              <strong id="accessPendingTitle">Há solicitações aguardando decisão</strong>
+              <span id="accessPendingDescription">Revise o papel antes de liberar o acesso aos dados.</span>
+            </div>
+            <button class="secondary-button compact" id="showPendingAccessButton" type="button">Ver pendentes</button>
+          </div>
+
+          <div class="access-toolbar">
+            <div class="access-toolbar-heading">
+              <div>
+                <strong>Localizar e segmentar</strong>
+                <span id="accessResultCount">Carregando usuários...</span>
+              </div>
+              <button class="text-button" id="clearAccessFiltersButton" type="button" hidden>Limpar filtros</button>
+            </div>
+            <label>
+              Buscar pessoa
+              <input type="search" id="accessUserSearch" placeholder="Nome, e-mail ou função">
+            </label>
+            <label>
+              Situação
+              <select id="accessStatusFilter">
+                <option value="all">Todas</option>
+                <option value="pending" selected>Pendentes</option>
+                <option value="active">Ativas</option>
+                <option value="suspended">Suspensas</option>
+                <option value="rejected">Rejeitadas</option>
+              </select>
+            </label>
+            <label>
+              Papel
+              <select id="accessRoleFilter">
+                <option value="all">Todos</option>
+                <option value="admin">Administrador</option>
+                <option value="operator">Operador</option>
+                <option value="analyst">Analista</option>
+                <option value="viewer">Visualizador</option>
+              </select>
+            </label>
+          </div>
+
+          <details class="permission-guide">
+            <summary>
+              <span>
+                <strong>Guia rápido de permissões</strong>
+                <small>Compare os quatro papéis antes de aprovar uma conta</small>
+              </span>
+            </summary>
+            <div class="permission-matrix" aria-label="Resumo dos papéis">
+              <article><strong>Administrador</strong><span>Operação completa e gestão de usuários.</span><small>Acesso mais sensível</small></article>
+              <article><strong>Operador</strong><span>Atualiza dados, registra anotações e distratos.</span><small>Rotina operacional</small></article>
+              <article><strong>Analista</strong><span>Leitura completa, sem alterações operacionais.</span><small>Diretoria e análise</small></article>
+              <article><strong>Visualizador</strong><span>Indicadores com dados pessoais redigidos.</span><small>Consulta restrita</small></article>
+            </div>
+          </details>
+
+          <div class="access-list-heading">
+            <div>
+              <p class="eyebrow">Contas cadastradas</p>
+              <h3>Usuários e solicitações</h3>
+            </div>
+            <span>Prioridade para acessos pendentes</span>
+          </div>
+          <div class="access-user-list" id="accessUserList" aria-live="polite"></div>
+        </section>
       </section>
     </main>
   </div>

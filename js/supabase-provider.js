@@ -63,8 +63,18 @@ export class SupabaseProvider extends Database {
     const rows = await this.client.rpc("get_own_profile");
     this.profile = rows[0] || null;
     if (!this.profile) throw providerError("PROFILE_MISSING", "Perfil ainda não provisionado.");
-    if (!this.profile.is_active) {
-      throw providerError("ACCOUNT_PENDING", "Seu acesso aguarda aprovação de um administrador.");
+    const accessStatus = this.profile.access_status
+      || (this.profile.is_active ? "active" : "pending");
+    if (!this.profile.is_active || accessStatus !== "active") {
+      const statusMessages = {
+        pending: "Seu acesso aguarda aprovação de um administrador.",
+        suspended: "Seu acesso está suspenso. Procure um administrador.",
+        rejected: "Sua solicitação de acesso foi recusada.",
+      };
+      throw providerError(
+        accessStatus === "pending" ? "ACCOUNT_PENDING" : "ACCOUNT_BLOCKED",
+        statusMessages[accessStatus] || "Seu acesso não está ativo.",
+      );
     }
     return this.profile;
   }
@@ -79,6 +89,10 @@ export class SupabaseProvider extends Database {
       avatarUrl: this.profile?.avatar_url || "",
       canWrite: ["admin", "operator"].includes(this.profile?.role),
       assuranceLevel: this.client.getAssuranceLevel(),
+      accessStatus: this.profile?.access_status || (this.profile?.is_active ? "active" : "pending"),
+      isPrimaryAdmin: Boolean(this.profile?.is_primary_admin),
+      mfaRequired: Boolean(this.profile?.mfa_required),
+      capabilities: this.profile?.capabilities || {},
     };
   }
 
@@ -177,9 +191,10 @@ export class SupabaseProvider extends Database {
   }
 
   async ensurePrivilegedMfa() {
-    if (!["admin", "operator"].includes(this.profile?.role)) return;
+    if (!["admin", "operator", "analyst"].includes(this.profile?.role)) return;
     if (this.client.getAssuranceLevel() === "aal2") return;
     if (this.mfaEnrollmentDeferred) return;
+    const required = Boolean(this.profile?.mfa_required);
 
     try {
       const factors = await this.client.listFactors();
@@ -190,6 +205,7 @@ export class SupabaseProvider extends Database {
 
       if (verifiedFactor) {
         await requestTotpVerification({
+          required: true,
           onVerify: async (code) => {
             const challenge = await this.client.challengeMfa(verifiedFactor.id);
             return this.client.verifyMfa(verifiedFactor.id, challenge.id, code);
@@ -201,6 +217,7 @@ export class SupabaseProvider extends Database {
         );
         const factor = await this.client.enrollTotp();
         const result = await requestTotpVerification({
+          required,
           enrollment: {
             qrCode: factor.totp?.qr_code || "",
             secret: factor.totp?.secret || "",
@@ -212,6 +229,9 @@ export class SupabaseProvider extends Database {
           },
         });
         if (result?.deferred) {
+          if (required) {
+            throw providerError("MFA_REQUIRED", "A autenticação em dois fatores é obrigatória para este perfil.");
+          }
           this.mfaEnrollmentDeferred = true;
           return;
         }
@@ -264,8 +284,31 @@ export class SupabaseProvider extends Database {
       p_job_title: profile.jobTitle || null,
       p_avatar_url: profile.avatarUrl || null,
     });
-    this.profile = rows?.[0] || this.profile;
+    this.profile = rows?.[0] ? { ...this.profile, ...rows[0] } : this.profile;
     return this.profile;
+  }
+
+  async listUsers(filters = {}) {
+    return this.client.rpc("admin_list_users", {
+      p_status: filters.status || null,
+      p_role: filters.role || null,
+      p_search: filters.search || null,
+    });
+  }
+
+  async getAccessSummary() {
+    const rows = await this.client.rpc("admin_access_summary");
+    return rows?.[0] || { pending: 0, active: 0, suspended: 0, rejected: 0 };
+  }
+
+  async updateUserAccess(userId, access) {
+    await this.client.rpc("admin_update_user_access", {
+      p_user_id: userId,
+      p_role: access.role,
+      p_access_status: access.status,
+      p_reason: access.reason || null,
+      p_mfa_required: Boolean(access.mfaRequired),
+    });
   }
 
   async terminateContract(contractId, reason, financial = {}) {

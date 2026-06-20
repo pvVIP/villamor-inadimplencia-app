@@ -1,4 +1,4 @@
-import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260616-1";
+import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260619-2";
 import { DistratoService } from "./distratos.js?v=20260615-1";
 import { parseWorkbookFile } from "./upload.js?v=20260619-1";
 import { renderCharts } from "./charts.js";
@@ -25,6 +25,7 @@ import {
 
 const db = createDataProvider();
 const NAVIGATION_STORAGE_KEY = "pos-venda-vip-navigation-collapsed";
+const APP_VERSION = "2026.06.20.1";
 const state = {
   contracts: [],
   terminated: [],
@@ -41,6 +42,11 @@ const state = {
   currentUser: "Operador Local",
   currentUserId: null,
   currentRole: "operator",
+  currentEmail: "",
+  currentAccessStatus: "active",
+  currentCapabilities: {},
+  isPrimaryAdmin: false,
+  mfaRequired: false,
   currentJobTitle: "",
   currentAvatarUrl: "",
   profileAvatarDraft: "",
@@ -60,6 +66,15 @@ const state = {
   healthAlerts: [],
   activeHealthAlert: null,
   healthAlertQuery: "",
+  accessUsers: [],
+  accessSummary: { pending: 0, active: 0, suspended: 0, rejected: 0 },
+  accessUsersLoaded: false,
+  accessUsersError: "",
+  accessDrafts: new Map(),
+  serviceWorkerRegistration: null,
+  systemUpdateAvailable: false,
+  systemUpdateStatus: "current",
+  applyingSystemUpdate: false,
 };
 
 const distratos = new DistratoService(db);
@@ -105,6 +120,11 @@ async function initializeApplication() {
   state.currentUser = identity?.name || localProfile.display_name || settings.currentUser || "Operador Local";
   state.currentUserId = identity?.id || null;
   state.currentRole = identity?.role || "operator";
+  state.currentEmail = identity?.email || "";
+  state.currentAccessStatus = identity?.accessStatus || "active";
+  state.currentCapabilities = identity?.capabilities || {};
+  state.isPrimaryAdmin = Boolean(identity?.isPrimaryAdmin);
+  state.mfaRequired = Boolean(identity?.mfaRequired);
   state.currentJobTitle = identity?.jobTitle || localProfile.job_title || "Sucesso do Cliente";
   state.currentAvatarUrl = identity?.avatarUrl || localProfile.avatar_url || "";
   state.canWrite = identity?.canWrite ?? true;
@@ -115,10 +135,13 @@ async function initializeApplication() {
     : "Usuário local";
   document.getElementById("changeUserButton").textContent = identity ? "Sair" : "Alterar";
   document.body.dataset.readonly = String(!state.canWrite);
+  document.body.dataset.role = state.currentRole;
   document.getElementById("uploadInput").disabled = !state.canWrite;
   document.getElementById("bulkTerminateButton").disabled = !state.canWrite;
   applyTheme(settings.theme || "light");
   await reload();
+  syncSettingsView();
+  if (canManageUsers()) refreshAccessSummary().catch(() => {});
   const postImportReport = sessionStorage.getItem("villamor-post-import-report");
   if (postImportReport) {
     sessionStorage.removeItem("villamor-post-import-report");
@@ -274,6 +297,7 @@ function roleLabel(role) {
   return {
     admin: "Administrador",
     operator: "Operador",
+    analyst: "Analista",
     viewer: "Leitura",
   }[role] || "Usuário";
 }
@@ -404,6 +428,21 @@ function bindEvents() {
   document.getElementById("saveAnnotationButton").addEventListener("click", saveAnnotation);
   document.getElementById("themeToggle").addEventListener("click", toggleTheme);
   document.getElementById("installAppButton").addEventListener("click", installProgressiveWebApp);
+  document.getElementById("checkForUpdatesButton").addEventListener("click", checkForSystemUpdates);
+  document.getElementById("applySystemUpdateButton").addEventListener("click", applySystemUpdate);
+  document.getElementById("refreshAccessUsersButton").addEventListener("click", () => loadAccessManagement());
+  document.getElementById("showPendingAccessButton").addEventListener("click", () => applyAccessStatusFilter("pending"));
+  document.getElementById("clearAccessFiltersButton").addEventListener("click", clearAccessFilters);
+  document.getElementById("accessSummary").addEventListener("click", (event) => {
+    const card = event.target.closest("[data-access-summary-status]");
+    if (card) applyAccessStatusFilter(card.dataset.accessSummaryStatus);
+  });
+  ["accessUserSearch", "accessStatusFilter", "accessRoleFilter"].forEach((id) => {
+    document.getElementById(id).addEventListener("input", renderAccessUsers);
+  });
+  document.getElementById("accessUserList").addEventListener("click", handleAccessUserAction);
+  document.getElementById("accessUserList").addEventListener("change", handleAccessUserFieldChange);
+  document.getElementById("accessUserList").addEventListener("input", handleAccessUserDraftInput);
   document.querySelector("#executiveAnalytics > summary").addEventListener("click", () => {
     document.getElementById("executiveAnalytics").dataset.userToggled = "true";
   });
@@ -445,11 +484,40 @@ function setupProgressiveWebApp() {
     toast("Aplicativo instalado com sucesso.");
   });
 
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("./sw.js").catch(() => {
+  if (!("serviceWorker" in navigator)) {
+    syncSystemUpdateStatus("unsupported");
+    return;
+  }
+
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!state.applyingSystemUpdate) return;
+    window.location.reload();
+  });
+
+  navigator.serviceWorker.register("./sw.js")
+    .then((registration) => {
+      state.serviceWorkerRegistration = registration;
+      if (registration.waiting && navigator.serviceWorker.controller) {
+        notifySystemUpdateAvailable();
+      }
+      registration.addEventListener("updatefound", () => {
+        const worker = registration.installing;
+        if (!worker) return;
+        syncSystemUpdateStatus("checking");
+        worker.addEventListener("statechange", () => {
+          if (worker.state === "installed" && navigator.serviceWorker.controller) {
+            notifySystemUpdateAvailable();
+          } else if (worker.state === "redundant") {
+            syncSystemUpdateStatus("error");
+          }
+        });
+      });
+      syncSystemUpdateStatus(state.systemUpdateAvailable ? "available" : "current");
+    })
+    .catch(() => {
+      syncSystemUpdateStatus("error");
       toast("O modo instalável ainda não pôde ser ativado.");
     });
-  }
 }
 
 function updateConnectionStatus() {
@@ -468,6 +536,74 @@ async function installProgressiveWebApp() {
   await state.installPrompt.userChoice;
   state.installPrompt = null;
   document.getElementById("installAppButton").hidden = true;
+}
+
+function notifySystemUpdateAvailable() {
+  const wasAvailable = state.systemUpdateAvailable;
+  state.systemUpdateAvailable = true;
+  syncSystemUpdateStatus("available");
+  updateSettingsNotificationBadge();
+  if (!wasAvailable) toast("Nova atualização disponível. Abra Configurações para atualizar.");
+}
+
+function syncSystemUpdateStatus(status) {
+  const host = document.getElementById("systemUpdateStatus");
+  if (!host) return;
+  const content = {
+    current: ["Sistema atualizado", "Você está usando a versão mais recente disponível."],
+    checking: ["Verificando atualização", "Consultando uma nova versão do aplicativo..."],
+    available: ["Atualização disponível", "Atualize agora para receber as melhorias mais recentes."],
+    applying: ["Aplicando atualização", "O aplicativo será recarregado automaticamente."],
+    unsupported: ["Atualização manual", "Este navegador não oferece atualização automática do aplicativo."],
+    error: ["Não foi possível verificar", "Confira sua conexão e tente novamente."],
+  }[status] || ["Sistema atualizado", "Você está usando a versão mais recente disponível."];
+
+  state.systemUpdateStatus = status;
+  if (status === "available") state.systemUpdateAvailable = true;
+  if (status === "current") state.systemUpdateAvailable = false;
+  host.dataset.status = status;
+  document.getElementById("systemUpdateTitle").textContent = content[0];
+  document.getElementById("systemUpdateDescription").textContent = content[1];
+  document.getElementById("systemVersionLabel").textContent = APP_VERSION;
+  document.getElementById("applySystemUpdateButton").hidden = status !== "available";
+}
+
+async function checkForSystemUpdates() {
+  const button = document.getElementById("checkForUpdatesButton");
+  button.disabled = true;
+  syncSystemUpdateStatus("checking");
+  try {
+    const registration = state.serviceWorkerRegistration
+      || await navigator.serviceWorker?.getRegistration();
+    if (!registration) {
+      syncSystemUpdateStatus("unsupported");
+      return;
+    }
+    state.serviceWorkerRegistration = registration;
+    await registration.update();
+    if (registration.waiting && navigator.serviceWorker.controller) {
+      notifySystemUpdateAvailable();
+      return;
+    }
+    setTimeout(() => {
+      if (!state.systemUpdateAvailable) syncSystemUpdateStatus("current");
+    }, 800);
+  } catch {
+    syncSystemUpdateStatus("error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function applySystemUpdate() {
+  const registration = state.serviceWorkerRegistration;
+  if (!registration?.waiting) {
+    toast("A atualização ainda está sendo preparada. Tente novamente em alguns segundos.");
+    return;
+  }
+  state.applyingSystemUpdate = true;
+  syncSystemUpdateStatus("applying");
+  registration.waiting.postMessage({ type: "SKIP_WAITING" });
 }
 
 async function reload() {
@@ -538,12 +674,17 @@ function switchTab(target) {
   document.getElementById("reversionsPanel").classList.toggle("active", target === "reversions");
   document.getElementById("healthPanel").classList.toggle("active", target === "health");
   document.getElementById("executivePanel").classList.toggle("active", target === "executive");
+  document.getElementById("settingsPanel").classList.toggle("active", target === "settings");
   document.body.dataset.activeTab = target;
   if (previousTarget !== target) window.scrollTo({ top: 0, behavior: "auto" });
   syncTopbar(target);
   updateFilterDock();
   renderActiveFilterChips();
   if (target !== "executive" && state.presentationMode) togglePresentationMode(false);
+  if (target === "settings") {
+    syncSettingsView();
+    if (canManageUsers() && !state.accessUsersLoaded) loadAccessManagement();
+  }
   if (target === "executive") {
     setTimeout(() => {
       renderExecutive();
@@ -577,6 +718,11 @@ const TOPBAR_CONTENT = {
     eyebrow: "Visão estratégica",
     title: "Painel da Inadimplência",
     description: "Risco, exposição e prioridades da carteira em uma leitura objetiva.",
+  },
+  settings: {
+    eyebrow: "Preferências e segurança",
+    title: "Configurações",
+    description: "Gerencie seu perfil, aparência, atualização do sistema e acessos autorizados.",
   },
 };
 
@@ -3212,6 +3358,452 @@ function syncProfileSummary() {
   document.getElementById("currentUserLabel").textContent = state.currentUser;
   document.getElementById("currentUserJobTitle").textContent = state.currentJobTitle || roleLabel(state.currentRole);
   document.getElementById("currentUserAvatar").src = state.currentAvatarUrl || "assets/shortcut-logo.png";
+  document.getElementById("settingsProfileAvatar").src = state.currentAvatarUrl || "assets/shortcut-logo.png";
+  document.getElementById("settingsProfileName").textContent = state.currentUser;
+  document.getElementById("settingsProfileJobTitle").textContent = state.currentJobTitle || "Função não informada";
+  document.getElementById("settingsProfileRole").textContent = [
+    roleLabel(state.currentRole),
+    state.currentEmail,
+  ].filter(Boolean).join(" · ");
+}
+
+function canManageUsers() {
+  return state.currentCapabilities?.["users.manage"] === true || state.currentRole === "admin";
+}
+
+function syncSettingsView() {
+  syncProfileSummary();
+  document.getElementById("systemVersionLabel").textContent = APP_VERSION;
+  document.getElementById("accessAdminSection").hidden = !canManageUsers();
+  syncSystemUpdateStatus(state.systemUpdateStatus);
+  renderAccessSummary();
+  renderAccessUsers();
+  updateSettingsNotificationBadge();
+}
+
+async function refreshAccessSummary() {
+  if (!canManageUsers()) return;
+  state.accessSummary = await db.getAccessSummary();
+  renderAccessSummary();
+  updateSettingsNotificationBadge();
+}
+
+async function loadAccessManagement({ announceDrafts = true } = {}) {
+  if (!canManageUsers()) return;
+  const host = document.getElementById("accessUserList");
+  const draftCount = state.accessDrafts.size;
+  if (announceDrafts && draftCount) {
+    toast(`${draftCount} ${draftCount === 1 ? "alteração não salva será preservada" : "alterações não salvas serão preservadas"} durante a atualização.`);
+  }
+  state.accessUsersError = "";
+  host.innerHTML = `
+    <div class="access-loading-grid" aria-label="Carregando usuários">
+      <span></span><span></span><span></span>
+    </div>`;
+  document.getElementById("accessResultCount").textContent = "Carregando usuários...";
+  document.getElementById("refreshAccessUsersButton").disabled = true;
+  try {
+    const [users, summary] = await Promise.all([
+      db.listUsers({ status: "all" }),
+      db.getAccessSummary(),
+    ]);
+    state.accessUsers = users || [];
+    state.accessSummary = summary || { pending: 0, active: 0, suspended: 0, rejected: 0 };
+    state.accessUsersLoaded = true;
+    state.accessUsersError = "";
+    renderAccessSummary();
+    renderAccessUsers();
+    updateSettingsNotificationBadge();
+  } catch (error) {
+    state.accessUsersError = error.message || "Erro inesperado.";
+    state.accessUsersLoaded = false;
+    renderAccessUsers();
+  } finally {
+    document.getElementById("refreshAccessUsersButton").disabled = false;
+  }
+}
+
+function renderAccessSummary() {
+  const host = document.getElementById("accessSummary");
+  if (!host) return;
+  const summary = state.accessSummary || {};
+  host.innerHTML = [
+    accessSummaryCard("Pendentes", summary.pending || 0, "Aguardando decisão", "warning", "pending"),
+    accessSummaryCard("Ativas", summary.active || 0, "Acesso autorizado", "success", "active"),
+    accessSummaryCard("Suspensas", summary.suspended || 0, "Acesso bloqueado", "danger", "suspended"),
+    accessSummaryCard("Rejeitadas", summary.rejected || 0, "Solicitações recusadas", "closed", "rejected"),
+  ].join("");
+  const pending = Number(summary.pending || 0);
+  const banner = document.getElementById("accessPendingBanner");
+  banner.hidden = pending === 0;
+  document.getElementById("accessPendingTitle").textContent = pending === 1
+    ? "1 solicitação aguarda sua decisão"
+    : `${pending} solicitações aguardam sua decisão`;
+  syncAccessSummarySelection();
+}
+
+function accessSummaryCard(label, value, helper, tone, status) {
+  return `
+    <button class="metric-card metric-card-${tone} access-summary-card" type="button"
+      data-access-summary-status="${status}" aria-pressed="false">
+      <span>${label}</span>
+      <strong>${value}</strong>
+      <small>${helper}</small>
+      <i aria-hidden="true">Ver contas →</i>
+    </button>`;
+}
+
+function renderAccessUsers() {
+  const host = document.getElementById("accessUserList");
+  if (!host || !canManageUsers()) return;
+  if (state.accessUsersError) {
+    const resultCount = document.getElementById("accessResultCount");
+    resultCount.textContent = "Falha ao carregar usuários";
+    resultCount.dataset.baseLabel = "";
+    document.getElementById("clearAccessFiltersButton").hidden = true;
+    host.innerHTML = `
+      <div class="settings-empty-state access-empty-state" role="alert">
+        <strong>Não foi possível carregar os acessos</strong>
+        <span>${escapeHtml(state.accessUsersError)}</span>
+        <button class="secondary-button compact" type="button" data-access-retry>Tentar novamente</button>
+      </div>`;
+    return;
+  }
+  if (!state.accessUsersLoaded) {
+    host.innerHTML = '<div class="settings-empty-state">Abra esta área para carregar os usuários cadastrados.</div>';
+    return;
+  }
+
+  const search = normalizeSearchValue(document.getElementById("accessUserSearch").value);
+  const status = document.getElementById("accessStatusFilter").value;
+  const role = document.getElementById("accessRoleFilter").value;
+  const users = state.accessUsers.filter((user) => {
+    const userStatus = user.access_status || (user.is_active ? "active" : "pending");
+    const userRole = state.accessDrafts.get(String(user.id))?.role ?? user.role;
+    if (status !== "all" && userStatus !== status) return false;
+    if (role !== "all" && userRole !== role) return false;
+    if (search && !normalizeSearchValue([user.display_name, user.email, user.job_title].join(" ")).includes(search)) return false;
+    return true;
+  }).sort((left, right) => {
+    const priority = { pending: 0, active: 1, suspended: 2, rejected: 3 };
+    const leftStatus = left.access_status || (left.is_active ? "active" : "pending");
+    const rightStatus = right.access_status || (right.is_active ? "active" : "pending");
+    return (priority[leftStatus] ?? 4) - (priority[rightStatus] ?? 4)
+      || String(left.display_name || left.email).localeCompare(String(right.display_name || right.email), "pt-BR");
+  });
+
+  const filterCount = Number(Boolean(search)) + Number(status !== "all") + Number(role !== "all");
+  const draftCount = state.accessDrafts.size;
+  const resultLabel = users.length === 1 ? "1 usuário encontrado" : `${users.length} usuários encontrados`;
+  const filteredResultLabel = filterCount
+    ? `${resultLabel} · ${filterCount} ${filterCount === 1 ? "filtro ativo" : "filtros ativos"}`
+    : resultLabel;
+  const resultCount = document.getElementById("accessResultCount");
+  resultCount.dataset.baseLabel = filteredResultLabel;
+  syncAccessDraftIndicator();
+  document.getElementById("clearAccessFiltersButton").hidden = filterCount === 0;
+  syncAccessSummarySelection();
+
+  host.innerHTML = users.map(renderAccessUserCard).join("")
+    || `
+      <div class="settings-empty-state access-empty-state">
+        <strong>Nenhum usuário encontrado</strong>
+        <span>Ajuste a busca ou remova os filtros para visualizar outras contas.</span>
+        <button class="secondary-button compact" type="button" data-access-clear>Limpar filtros</button>
+      </div>`;
+}
+
+function renderAccessUserCard(user) {
+  const protectedAccount = Boolean(user.is_primary_admin);
+  const status = user.access_status || (user.is_active ? "active" : "pending");
+  const draft = state.accessDrafts.get(String(user.id));
+  const selectedRole = draft?.role ?? user.role;
+  const mfaRequired = draft?.mfaRequired ?? Boolean(user.mfa_required);
+  const reason = draft?.reason ?? "";
+  const roleOptions = ["admin", "operator", "analyst", "viewer"]
+    .map((role) => `<option value="${role}" ${selectedRole === role ? "selected" : ""}>${accessRoleLabel(role)}</option>`)
+    .join("");
+  const actions = accessUserActions(status, protectedAccount);
+  return `
+    <article class="access-user-card access-user-${escapeAttr(status)}" data-access-user-id="${escapeAttr(user.id)}"
+      data-access-status="${escapeAttr(status)}" data-original-role="${escapeAttr(user.role)}"
+      data-original-mfa="${String(Boolean(user.mfa_required))}">
+      <div class="access-user-heading">
+        <div class="access-user-avatar" aria-hidden="true">${escapeHtml(initials(user.display_name || user.email || "?"))}</div>
+        <div class="access-user-identity">
+          <strong>${escapeHtml(user.display_name || "Nome não informado")}</strong>
+          <span>${escapeHtml(user.email || "E-mail não disponível")}</span>
+          <small>${escapeHtml(user.job_title || "Função não informada")}</small>
+        </div>
+        <div class="access-user-badges">
+          <span class="access-status-badge access-status-${escapeAttr(status)}">${accessStatusLabel(status)}</span>
+          ${protectedAccount ? '<span class="primary-admin-badge">Conta principal</span>' : ""}
+        </div>
+      </div>
+      ${protectedAccount ? `
+        <div class="access-protected-notice">
+          <span aria-hidden="true">✓</span>
+          Esta conta mantém a administração principal e não pode ser rebaixada ou bloqueada.
+        </div>` : ""}
+      <div class="access-user-controls">
+        <label>
+          Papel
+          <select class="access-role-select" ${protectedAccount ? "disabled" : ""}>${roleOptions}</select>
+          <small class="access-role-description">${escapeHtml(accessRoleDescription(selectedRole))}</small>
+        </label>
+        <label class="access-mfa-control">
+          <input type="checkbox" class="access-mfa-checkbox" ${mfaRequired ? "checked" : ""} ${selectedRole === "viewer" ? "disabled" : ""}>
+          <span>
+            <strong>Autenticação em dois fatores</strong>
+            <small>${selectedRole === "viewer"
+              ? "Não exigida para dados redigidos"
+              : mfaRequired ? "Exigida nesta conta" : "Recomendada para dados pessoais"}</small>
+          </span>
+        </label>
+        <label>
+          Nota administrativa
+          <input type="text" class="access-reason-input" maxlength="240" value="${escapeAttr(reason)}"
+            placeholder="Obrigatória para promover, suspender ou rejeitar">
+          <small>Registrada na auditoria quando houver alteração.</small>
+        </label>
+      </div>
+      <div class="access-user-footer">
+        <div class="access-user-dates">
+          <span>Solicitado em <strong>${escapeHtml(formatDate(user.requested_at))}</strong></span>
+          ${user.access_updated_at ? `<span>Última decisão em <strong>${escapeHtml(formatDate(user.access_updated_at))}</strong></span>` : ""}
+        </div>
+        <div>${actions}</div>
+      </div>
+    </article>
+  `;
+}
+
+function accessUserActions(status, protectedAccount) {
+  if (protectedAccount) {
+    return '<button class="primary-button compact" type="button" data-access-action="save">Salvar segurança</button>';
+  }
+  if (status === "pending") {
+    return [
+      '<button class="secondary-button compact" type="button" data-access-action="reject">Rejeitar</button>',
+      '<button class="primary-button compact" type="button" data-access-action="approve">Aprovar acesso</button>',
+    ].join("");
+  }
+  if (status === "active") {
+    return [
+      '<button class="danger-button compact" type="button" data-access-action="suspend">Suspender</button>',
+      '<button class="primary-button compact" type="button" data-access-action="save">Salvar permissões</button>',
+    ].join("");
+  }
+  if (status === "suspended") {
+    return [
+      '<button class="secondary-button compact" type="button" data-access-action="reject">Rejeitar</button>',
+      '<button class="primary-button compact" type="button" data-access-action="reactivate">Reativar</button>',
+    ].join("");
+  }
+  return '<button class="primary-button compact" type="button" data-access-action="approve">Reconsiderar e aprovar</button>';
+}
+
+function handleAccessUserFieldChange(event) {
+  if (event.target.classList.contains("access-mfa-checkbox")) {
+    const hint = event.target.closest(".access-mfa-control").querySelector("small");
+    hint.textContent = event.target.checked ? "Exigida nesta conta" : "Proteção adicional opcional";
+    saveAccessDraft(event.target.closest("[data-access-user-id]"));
+    return;
+  }
+  if (!event.target.classList.contains("access-role-select")) return;
+  const card = event.target.closest("[data-access-user-id]");
+  const mfa = card.querySelector(".access-mfa-checkbox");
+  const description = card.querySelector(".access-role-description");
+  const mfaHint = card.querySelector(".access-mfa-control small");
+  const viewer = event.target.value === "viewer";
+  description.textContent = accessRoleDescription(event.target.value);
+  mfa.disabled = viewer;
+  if (viewer) {
+    mfa.checked = false;
+    mfaHint.textContent = "Não exigida para dados redigidos";
+  } else {
+    if (card.dataset.accessStatus === "pending" || event.target.value === "admin") mfa.checked = true;
+    mfaHint.textContent = mfa.checked ? "Exigida nesta conta" : "Recomendada para dados pessoais";
+  }
+  saveAccessDraft(card);
+}
+
+function handleAccessUserDraftInput(event) {
+  if (!event.target.classList.contains("access-reason-input")) return;
+  saveAccessDraft(event.target.closest("[data-access-user-id]"));
+}
+
+function saveAccessDraft(card) {
+  if (!card) return;
+  const userId = String(card.dataset.accessUserId);
+  const role = card.querySelector(".access-role-select").value;
+  const mfaRequired = card.querySelector(".access-mfa-checkbox").checked;
+  const reason = card.querySelector(".access-reason-input").value;
+  const unchanged = role === card.dataset.originalRole
+    && mfaRequired === (card.dataset.originalMfa === "true")
+    && !reason.trim();
+  if (unchanged) {
+    state.accessDrafts.delete(userId);
+  } else {
+    state.accessDrafts.set(userId, { role, mfaRequired, reason });
+  }
+  syncAccessDraftIndicator();
+}
+
+function syncAccessDraftIndicator() {
+  const resultCount = document.getElementById("accessResultCount");
+  if (!resultCount) return;
+  const count = state.accessDrafts.size;
+  const baseLabel = resultCount.dataset.baseLabel || resultCount.textContent;
+  resultCount.textContent = count
+    ? `${baseLabel} · ${count} ${count === 1 ? "alteração não salva" : "alterações não salvas"}`
+    : baseLabel;
+  resultCount.setAttribute(
+    "aria-label",
+    count ? `${count} alterações não salvas na gestão de usuários` : "",
+  );
+}
+
+async function handleAccessUserAction(event) {
+  if (event.target.closest("[data-access-clear]")) {
+    clearAccessFilters();
+    return;
+  }
+  if (event.target.closest("[data-access-retry]")) {
+    await loadAccessManagement();
+    return;
+  }
+  const button = event.target.closest("[data-access-action]");
+  if (!button) return;
+  const card = button.closest("[data-access-user-id]");
+  const userId = card.dataset.accessUserId;
+  const action = button.dataset.accessAction;
+  const role = card.querySelector(".access-role-select").value;
+  const mfaRequired = card.querySelector(".access-mfa-checkbox").checked;
+  const reasonInput = card.querySelector(".access-reason-input");
+  let reason = reasonInput.value.trim();
+  const promotingToAdmin = role === "admin" && card.dataset.originalRole !== "admin";
+  const nextStatus = {
+    approve: "active",
+    reactivate: "active",
+    suspend: "suspended",
+    reject: "rejected",
+    save: card.dataset.accessStatus,
+  }[action];
+
+  if ((["suspend", "reject"].includes(action) || promotingToAdmin) && reason.length < 4) {
+    reasonInput.focus();
+    toast(promotingToAdmin
+      ? "Informe uma justificativa para promover esta conta a administrador."
+      : "Informe uma justificativa para bloquear ou rejeitar o acesso.");
+    return;
+  }
+  if (!reason) {
+    reason = {
+      approve: "Aprovação administrativa",
+      reactivate: "Reativação administrativa",
+      save: "Atualização de permissões",
+    }[action] || "";
+  }
+  if (promotingToAdmin || ["suspend", "reject"].includes(action)) {
+    const confirmed = confirm(promotingToAdmin
+      ? "Confirmar a promoção desta conta para Administrador? Esse papel permite gerir usuários e toda a operação."
+      : action === "suspend"
+        ? "Suspender esta conta e bloquear o próximo acesso ao sistema?"
+        : "Rejeitar esta solicitação de acesso?");
+    if (!confirmed) return;
+  }
+
+  card.classList.add("is-updating");
+  card.querySelectorAll("button, input, select").forEach((control) => {
+    control.disabled = true;
+  });
+  try {
+    await db.updateUserAccess(userId, {
+      role,
+      status: nextStatus,
+      reason,
+      mfaRequired,
+    });
+    state.accessDrafts.delete(String(userId));
+    toast("Permissões atualizadas com auditoria.");
+    await loadAccessManagement({ announceDrafts: false });
+  } catch (error) {
+    renderAccessUsers();
+    toast(`Não foi possível atualizar o acesso: ${error.message}`);
+  }
+}
+
+function updateSettingsNotificationBadge() {
+  const badge = document.getElementById("settingsNotificationBadge");
+  const button = document.getElementById("settingsTab");
+  if (!badge || !button) return;
+  const count = (canManageUsers() ? Number(state.accessSummary?.pending || 0) : 0)
+    + (state.systemUpdateAvailable ? 1 : 0);
+  badge.textContent = String(count);
+  badge.hidden = count === 0;
+  const accessibleLabel = count
+    ? `Configurações, ${count} ${count === 1 ? "notificação" : "notificações"}`
+    : "Configurações";
+  button.setAttribute("aria-label", accessibleLabel);
+  button.title = accessibleLabel;
+}
+
+function accessRoleLabel(role) {
+  return {
+    admin: "Administrador",
+    operator: "Operador",
+    analyst: "Analista",
+    viewer: "Visualizador",
+  }[role] || role;
+}
+
+function accessRoleDescription(role) {
+  return {
+    admin: "Controle completo, inclusive usuários.",
+    operator: "Executa a rotina operacional e importações.",
+    analyst: "Consulta dados completos sem alterar registros.",
+    viewer: "Visualiza indicadores com dados pessoais ocultos.",
+  }[role] || "Papel de acesso";
+}
+
+function applyAccessStatusFilter(status) {
+  document.getElementById("accessStatusFilter").value = status;
+  renderAccessUsers();
+  document.getElementById("accessUserList").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function clearAccessFilters() {
+  document.getElementById("accessUserSearch").value = "";
+  document.getElementById("accessStatusFilter").value = "all";
+  document.getElementById("accessRoleFilter").value = "all";
+  renderAccessUsers();
+}
+
+function syncAccessSummarySelection() {
+  const selected = document.getElementById("accessStatusFilter")?.value;
+  document.querySelectorAll("[data-access-summary-status]").forEach((card) => {
+    card.setAttribute("aria-pressed", String(card.dataset.accessSummaryStatus === selected));
+  });
+}
+
+function accessStatusLabel(status) {
+  return {
+    pending: "Pendente",
+    active: "Ativa",
+    suspended: "Suspensa",
+    rejected: "Rejeitada",
+  }[status] || status;
+}
+
+function initials(value) {
+  return String(value || "?")
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0] || "")
+    .join("")
+    .toUpperCase();
 }
 
 function openProfileDialog() {
@@ -3340,7 +3932,7 @@ function applyTheme(theme) {
   const dark = theme === "dark";
   document.documentElement.dataset.theme = dark ? "dark" : "light";
   document.getElementById("themeToggle").setAttribute("aria-pressed", String(dark));
-  document.getElementById("themeToggleLabel").textContent = dark ? "Modo claro" : "Modo escuro";
+  document.getElementById("themeToggleLabel").textContent = dark ? "Usar modo claro" : "Usar modo escuro";
   document.querySelector(".theme-toggle-icon").textContent = dark ? "☀" : "◐";
 }
 

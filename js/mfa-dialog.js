@@ -1,5 +1,6 @@
 export function requestTotpVerification({
   enrollment = null,
+  required = false,
   onVerify,
 }) {
   return new Promise((resolve, reject) => {
@@ -32,7 +33,9 @@ export function requestTotpVerification({
     const description = document.createElement("p");
     description.id = "mfaDialogDescription";
     description.textContent = enrollment
-      ? "Esta proteção é opcional por enquanto. No celular, use a chave manual em um autenticador ou continue sem configurar."
+      ? required
+        ? "Esta proteção é obrigatória para este perfil. Configure um autenticador para continuar."
+        : "Esta proteção é opcional por enquanto. No celular, use a chave manual em um autenticador ou continue sem configurar."
       : "Informe o código atual do seu aplicativo autenticador.";
     description.style.cssText = "margin:0;font:400 14px/1.5 Inter,sans-serif;color:#695457";
 
@@ -147,7 +150,7 @@ export function requestTotpVerification({
 
     const cancel = document.createElement("button");
     cancel.type = "button";
-    cancel.textContent = enrollment ? "Continuar sem configurar" : "Cancelar";
+    cancel.textContent = enrollment && !required ? "Continuar sem configurar" : "Cancelar acesso";
     cancel.style.cssText = buttonStyle("#fff", "#522b2c", "#cdb9b7");
 
     const confirm = document.createElement("button");
@@ -166,7 +169,7 @@ export function requestTotpVerification({
       settled = true;
       dialog.close();
       dialog.remove();
-      if (enrollment) {
+      if (enrollment && !required) {
         resolve({ deferred: true });
         return;
       }

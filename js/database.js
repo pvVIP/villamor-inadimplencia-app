@@ -224,6 +224,18 @@ export class Database {
     return updated;
   }
 
+  async listUsers() {
+    return [];
+  }
+
+  async getAccessSummary() {
+    return { pending: 0, active: 0, suspended: 0, rejected: 0 };
+  }
+
+  async updateUserAccess() {
+    throw new Error("A gestão de acessos está disponível somente no modo online.");
+  }
+
   async addAuditLog(payload) {
     await this.storage.put("auditLogs", {
       id: createId("audit"),

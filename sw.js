@@ -1,16 +1,16 @@
-const CACHE_NAME = "pos-venda-vip-v25";
+const CACHE_NAME = "pos-venda-vip-v27";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./offline.html",
   "./manifest.webmanifest",
-  "./css/style.css?v=20260619-1",
-  "./js/app.js?v=20260619-1",
+  "./css/style.css?v=20260620-1",
+  "./js/app.js?v=20260620-1",
   "./js/config.js",
-  "./js/data-provider.js?v=20260616-1",
-  "./js/database.js?v=20260616-1",
+  "./js/data-provider.js?v=20260619-2",
+  "./js/database.js?v=20260619-2",
   "./js/supabase-client.js?v=20260614-1",
-  "./js/supabase-provider.js?v=20260615-1",
+  "./js/supabase-provider.js?v=20260619-2",
   "./js/mfa-dialog.js?v=20260614-1",
   "./js/storage.js?v=20260609-5",
   "./js/distratos.js?v=20260615-1",
@@ -29,7 +29,10 @@ const APP_SHELL = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
-  self.skipWaiting();
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
