@@ -16,10 +16,10 @@ export function calculateKpis(contracts, terminatedContracts = []) {
   const defaulted = active.filter((item) => item.appStatus === STATUS.DEFAULTED);
   const late = active.filter((item) => item.appStatus === STATUS.LATE);
   const current = active.filter((item) => item.appStatus === STATUS.CURRENT || item.appStatus === STATUS.PAID);
-  const financedComparable = active.filter((item) => toNumber(item.financedValue) > 0);
+  const financedComparable = active.filter((item) => getFinancedValue(item) > 0);
   const totalPortfolio = sum(active, "totalUpdatedValue");
   const totalIntegralized = sum(active, "effectivePaidValue");
-  const totalFinanced = sum(financedComparable, "financedValue");
+  const totalFinanced = financedComparable.reduce((total, item) => total + getFinancedValue(item), 0);
   const totalUpdatedComparable = sum(financedComparable, "totalUpdatedValue");
   const totalAppreciation = totalFinanced ? totalUpdatedComparable - totalFinanced : 0;
   const totalReceivable = active.reduce((total, item) => {
@@ -141,4 +141,18 @@ export function sum(rows, key) {
 function average(rows, key) {
   if (!rows.length) return 0;
   return rows.reduce((total, item) => total + toNumber(item[key]), 0) / rows.length;
+}
+
+function getFinancedValue(contract) {
+  const direct = toNumber(contract.financedValue);
+  if (direct > 0) return direct;
+  const extras = contract.sourceExtras || {};
+  const match = Object.entries(extras).find(([header, value]) => {
+    const normalized = String(header || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+    return normalized.includes("valor financiado") && toNumber(value) > 0;
+  });
+  return match ? toNumber(match[1]) : 0;
 }

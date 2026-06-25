@@ -21,11 +21,11 @@ import {
   groupByCategory,
   getHeatmapData,
   getTopDefaulted,
-} from "./dashboard.js?v=20260625-1";
+} from "./dashboard.js?v=20260625-2";
 
 const db = createDataProvider();
 const NAVIGATION_STORAGE_KEY = "pos-venda-vip-navigation-collapsed";
-const APP_VERSION = "2026.06.25.2";
+const APP_VERSION = "2026.06.25.3";
 const state = {
   contracts: [],
   terminated: [],
