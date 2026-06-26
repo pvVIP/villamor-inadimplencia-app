@@ -25,7 +25,7 @@ import {
 
 const db = createDataProvider();
 const NAVIGATION_STORAGE_KEY = "pos-venda-vip-navigation-collapsed";
-const APP_VERSION = "2026.06.25.3";
+const APP_VERSION = "2026.06.26.1";
 const state = {
   contracts: [],
   terminated: [],
@@ -400,11 +400,16 @@ function bindEvents() {
   document.getElementById("simulationContractSearch").addEventListener("focus", renderSimulationContractResults);
   document.getElementById("simulationContractSearch").addEventListener("keydown", handleSimulationContractSearchKeydown);
   document.getElementById("simulationContractResults").addEventListener("click", handleSimulationContractResultClick);
-  document.getElementById("clearSimulationContractButton").addEventListener("click", clearSimulationScenario);
   document.getElementById("cancelSimulationButton").addEventListener("click", closeSimulationDialog);
+  document.getElementById("simulationForm").addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && event.target.matches("input")) event.preventDefault();
+  });
   document.getElementById("simulationDialog").addEventListener("cancel", (event) => {
     event.preventDefault();
     closeSimulationDialog();
+  });
+  document.getElementById("simulationDialog").addEventListener("close", () => {
+    document.getElementById("simulationContractResults").hidden = true;
   });
   document.getElementById("printSimulationReportButton").addEventListener("click", printRescissionScenarioReport);
   document.getElementById("uploadInput").addEventListener("change", handleUpload);
@@ -2173,6 +2178,18 @@ function closeSimulationDialog() {
   document.getElementById("simulationContractResults").hidden = true;
 }
 
+function setSimulationFieldsEnabled(enabled) {
+  [
+    "simulationContractValue",
+    "simulationPaidValue",
+    "simulationGiftValue",
+    "printSimulationReportButton",
+  ].forEach((id) => {
+    const element = document.getElementById(id);
+    if (element) element.disabled = !enabled;
+  });
+}
+
 function clearSimulationScenario(options = {}) {
   state.simulationContract = null;
   [
@@ -2186,6 +2203,8 @@ function clearSimulationScenario(options = {}) {
   ].forEach((id) => {
     document.getElementById(id).value = "";
   });
+  setSimulationFieldsEnabled(false);
+  document.getElementById("simulationSelectionHint").hidden = false;
   document.getElementById("simulationContractSummary").hidden = true;
   document.getElementById("simulationContractResults").hidden = true;
   document.getElementById("simulationError").hidden = true;
@@ -2198,7 +2217,7 @@ function renderSimulationContractResults() {
   const query = normalizeSearchValue(document.getElementById("simulationContractSearch").value);
   const matches = getContractSearchMatches(query, 8);
   host.innerHTML = matches.map((contract, index) => contractSearchResultButton(contract, index, "simulation-contract-result")).join("")
-    || '<p class="contract-search-empty">Nenhum contrato encontrado. Você pode preencher manualmente.</p>';
+    || '<p class="contract-search-empty">Nenhum contrato encontrado. Confira a busca para selecionar um contrato existente.</p>';
   host.hidden = false;
 }
 
@@ -2229,6 +2248,8 @@ function selectSimulationContract(contractId) {
   document.getElementById("simulationClientName").value = contract.primaryClient || "";
   document.getElementById("simulationContractCode").value = contractDisplayCode(contract);
   document.getElementById("simulationLocalizer").value = contractLocalizer(contract);
+  setSimulationFieldsEnabled(true);
+  document.getElementById("simulationSelectionHint").hidden = true;
   fillRescissionInputs("simulation", contract);
   const summary = document.getElementById("simulationContractSummary");
   const appreciation = contractAppreciation(contract);
@@ -2282,9 +2303,18 @@ function contractSearchResultButton(contract, index, dataName) {
 }
 
 function printRescissionScenarioReport() {
+  if (!state.simulationContract) {
+    const error = document.getElementById("simulationError");
+    error.textContent = "Selecione um contrato antes de emitir o cenário da rescisão.";
+    error.hidden = false;
+    document.getElementById("simulationContractSearch").focus();
+    return;
+  }
   const scenario = readRescissionScenario("simulation");
   if (scenario.contractValue <= 0 && scenario.paidValue <= 0) {
-    document.getElementById("simulationError").hidden = false;
+    const error = document.getElementById("simulationError");
+    error.textContent = "Informe pelo menos o valor do contrato ou o valor integralizado para emitir o cenário.";
+    error.hidden = false;
     document.getElementById("simulationContractValue").focus();
     return;
   }
@@ -2706,6 +2736,20 @@ function buildDataHealthAlerts() {
       expected: "Atraso menor ou igual ao saldo a receber, salvo juros ou ajustes documentados.",
       fields: financialHealthFields(contract, ["overdueValue", "remainingBalance"]),
     }));
+  const activeZeroIntegralized = state.contracts
+    .filter((contract) => {
+      const total = toNumber(contract.totalUpdatedValue);
+      const paid = toNumber(contract.effectivePaidValue);
+      const percent = getContractPaidPercent(contract);
+      return total > 0
+        && paid <= financialTolerance(total)
+        && (percent === null || percent <= 0.05);
+    })
+    .map((contract) => healthContractRecord(contract, {
+      problem: "Contrato ativo com valor e percentual integralizado zerados.",
+      expected: "Integralização maior que zero, salvo venda nova, cortesia, migração ou exceção documentada.",
+      fields: financialHealthFields(contract, ["sourceStatus", "effectivePaidValue", "effectivePaidPercent", "totalUpdatedValue", "remainingBalance"]),
+    }));
 
   addHealthAlert(alerts, "critical", "Quitados sem integralização de 100%", paidIntegrityIssues,
     "Contratos marcados como Quitado possuem percentual abaixo de 100%, saldo restante, atraso ou diferença entre total e integralizado.",
@@ -2753,6 +2797,9 @@ function buildDataHealthAlerts() {
   addHealthAlert(alerts, "warning", "Atraso maior que o saldo a receber", overdueAboveRemaining,
     "O atraso supera o saldo restante. Isso pode ser legítimo apenas quando há juros, multas ou ajustes não refletidos no saldo.",
     "Confirme juros e ajustes; caso não existam, corrija atraso ou saldo a receber.");
+  addHealthAlert(alerts, "warning", "Ativos com integralização zerada", activeZeroIntegralized,
+    "Contratos ativos com carteira positiva aparecem com 0% integralizado. Podem ser vendas novas, mas merecem conferência quando não houver justificativa operacional.",
+    "Confira valor integralizado, percentual pago e status financeiro na origem; documente exceções legítimas.");
   addHealthAlert(alerts, "warning", "Reversões sem vínculo com contrato ativo", unlinkedReversions.map((contract) => healthContractRecord(contract, {
     problem: "A Origem Reversão não localizou um contrato ativo correspondente.",
     expected: "Origem Reversão igual ao localizador do contrato atual.",

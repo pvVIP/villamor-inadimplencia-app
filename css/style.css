@@ -1595,6 +1595,17 @@ canvas {
   width: min(820px, calc(100vw - 32px));
 }
 
+.simulation-selection-hint {
+  margin: -4px 0 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(157, 42, 79, 0.16);
+  border-radius: 6px;
+  background: rgba(157, 42, 79, 0.08);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .simulation-identification-grid,
 .rescission-calculator-grid {
   display: grid;
@@ -1649,6 +1660,12 @@ canvas {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.35;
+}
+
+.rescission-calculator input:disabled,
+.rescission-calculator button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
 }
 
 .rescission-result {
@@ -2655,6 +2672,108 @@ body.filter-dock-active .toast-host {
 
 #terminationsPanel .data-table th:last-child {
   position: static;
+}
+
+#terminateDialog,
+#simulationDialog {
+  width: min(1180px, 80vw);
+  max-width: calc(100vw - 32px);
+  max-height: min(860px, 80dvh);
+}
+
+#terminateDialog form,
+#simulationDialog form {
+  max-height: min(858px, calc(80dvh - 2px));
+}
+
+#terminateForm,
+#simulationForm {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 14px 16px;
+}
+
+#terminateForm > h2,
+#terminateForm > .modal-alert,
+#terminateForm > #terminationContractField,
+#terminateForm > #terminationContractSummary,
+#terminateForm > .termination-calculator,
+#terminateForm > .financial-switches,
+#terminateForm > #terminationEditJustificationField,
+#terminateForm > .field-error,
+#terminateForm > .termination-financial-warning,
+#terminateForm > .modal-actions,
+#simulationForm > h2,
+#simulationForm > .modal-alert,
+#simulationForm > label:first-of-type,
+#simulationForm > .simulation-selection-hint,
+#simulationForm > #simulationContractSummary,
+#simulationForm > .simulation-identification-grid,
+#simulationForm > .rescission-calculator,
+#simulationForm > .field-error,
+#simulationForm > .modal-actions {
+  grid-column: 1 / -1;
+}
+
+#terminateForm > label:has(textarea) {
+  grid-column: 1 / -1;
+}
+
+#terminateDialog .modal-actions,
+#simulationDialog .modal-actions {
+  position: static;
+  bottom: auto;
+  grid-column: 1 / -1;
+}
+
+#simulationDialog .contract-search-results {
+  position: static;
+  max-height: 230px;
+  margin-top: 8px;
+}
+
+@media (min-width: 900px) {
+  .rescission-calculator {
+    grid-template-columns: minmax(250px, 0.86fr) minmax(380px, 1.14fr);
+    gap: 14px 18px;
+  }
+
+  .rescission-calculator-heading {
+    grid-column: 1 / -1;
+  }
+
+  .rescission-calculator-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .rescission-result {
+    align-self: start;
+  }
+}
+
+@media (max-width: 720px) {
+  #terminateDialog,
+  #simulationDialog {
+    width: calc(100vw - 18px);
+    max-width: calc(100vw - 18px);
+    max-height: calc(100dvh - 18px);
+  }
+
+  #terminateForm,
+  #simulationForm {
+    grid-template-columns: 1fr;
+  }
+
+  .termination-hub-actions-bar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .termination-hub-actions-bar .primary-button {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 1180px) {
@@ -3862,6 +3981,12 @@ textarea:focus {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.termination-hub-actions-bar {
+  justify-content: flex-end;
+  margin-bottom: 14px;
+  padding: 0;
 }
 
 .termination-filters {
