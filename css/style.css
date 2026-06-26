@@ -481,6 +481,7 @@ h3 {
   border: 0;
   padding: 0 14px;
   font-weight: 700;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
@@ -599,9 +600,7 @@ textarea:focus {
 }
 
 .health-overview {
-  display: grid;
-  grid-template-columns: minmax(220px, 0.7fr) minmax(0, 3fr);
-  gap: 14px;
+  display: block;
   margin-bottom: 16px;
 }
 
@@ -659,8 +658,28 @@ textarea:focus {
 }
 
 .health-metrics {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   margin: 0;
+}
+
+.health-filter-card {
+  width: 100%;
+  min-height: 205px;
+  appearance: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.health-filter-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-soft);
+}
+
+.health-filter-card[aria-pressed="true"] {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 24%, transparent), var(--shadow-soft);
 }
 
 .health-alerts {
@@ -1572,11 +1591,35 @@ canvas {
 
 .modal form {
   padding: 22px;
+  position: relative;
 }
 
 .modal-alert {
   color: var(--red);
   font-weight: 800;
+}
+
+.modal-close-button {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.modal-close-button:hover {
+  border-color: var(--brand);
+  color: var(--brand);
 }
 
 .field-error {
@@ -2630,6 +2673,16 @@ body.filter-dock-active .toast-host {
   font-size: 12px;
 }
 
+@media (max-width: 720px) {
+  .health-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .health-filter-card {
+    min-height: 160px;
+  }
+}
+
 .termination-metrics {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -2695,6 +2748,11 @@ body.filter-dock-active .toast-host {
 }
 
 #terminateForm > h2,
+#simulationForm > h2 {
+  padding-right: 48px;
+}
+
+#terminateForm > h2,
 #terminateForm > .modal-alert,
 #terminateForm > #terminationContractField,
 #terminateForm > #terminationContractSummary,
@@ -2752,6 +2810,12 @@ body.filter-dock-active .toast-host {
   }
 }
 
+@media (min-width: 1100px) {
+  #terminateForm {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 720px) {
   #terminateDialog,
   #simulationDialog {
@@ -2765,15 +2829,6 @@ body.filter-dock-active .toast-host {
     grid-template-columns: 1fr;
   }
 
-  .termination-hub-actions-bar {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    width: 100%;
-  }
-
-  .termination-hub-actions-bar .primary-button {
-    grid-column: 1 / -1;
-  }
 }
 
 @media (max-width: 1180px) {
@@ -3870,6 +3925,17 @@ textarea:disabled {
   padding: 16px 18px;
 }
 
+.topbar-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.topbar-actions .contextual-action {
+  min-height: 38px;
+  padding-inline: 13px;
+  font-size: 12px;
+}
+
 .topbar h1 {
   font-size: 24px;
   line-height: 1.2;
@@ -3970,23 +4036,6 @@ textarea:focus {
 
 .section-header {
   padding: 16px 18px;
-}
-
-.termination-hub-header {
-  gap: 18px;
-}
-
-.termination-hub-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.termination-hub-actions-bar {
-  justify-content: flex-end;
-  margin-bottom: 14px;
-  padding: 0;
 }
 
 .termination-filters {
@@ -4792,6 +4841,10 @@ textarea:focus {
   }
 
   .metrics-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .health-metrics {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 

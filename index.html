@@ -15,10 +15,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20260626-1">
+  <link rel="stylesheet" href="css/style.css?v=20260626-2">
   <script src="vendor/chart.umd.min.js?v=4.4.7" defer></script>
   <script src="vendor/xlsx.full.min.js?v=0.20.3" defer></script>
-  <script src="js/app.js?v=20260626-1" type="module"></script>
+  <script src="js/app.js?v=20260626-2" type="module"></script>
 </head>
 <body data-active-tab="operational">
   <a class="skip-link" href="#mainContent">Ir para o conteúdo principal</a>
@@ -131,6 +131,9 @@
         <div class="topbar-actions">
           <button class="secondary-button contextual-action" id="refreshButton" type="button" data-tabs="operational terminations reversions health executive">Recalcular</button>
           <button class="secondary-button contextual-action" id="operationalListReportButton" type="button" data-tabs="operational">Relatório Lista</button>
+          <button class="primary-button contextual-action" id="newTerminationButton" type="button" data-tabs="terminations">Lançar distrato</button>
+          <button class="secondary-button contextual-action" id="simulateTerminationButton" type="button" data-tabs="terminations">Simulação</button>
+          <button class="secondary-button contextual-action" id="formalTerminationReportButton" type="button" data-tabs="terminations">Relatório de distratos</button>
           <label class="primary-button file-button contextual-action" data-tabs="operational health">
             Atualização
             <input type="file" id="uploadInput" accept=".xlsx,.xls" aria-label="Selecionar planilha para atualização">
@@ -256,12 +259,6 @@
       </section>
 
       <section class="tab-panel" id="terminationsPanel" role="region" aria-labelledby="terminationsTab">
-        <div class="termination-hub-actions termination-hub-actions-bar" aria-label="Ações da central de distratos">
-          <button class="primary-button" id="newTerminationButton" type="button">Lançar distrato</button>
-          <button class="secondary-button" id="simulateTerminationButton" type="button">Simulação</button>
-          <button class="secondary-button" id="formalTerminationReportButton" type="button">Relatório de distratos</button>
-          <button class="secondary-button" id="executiveTerminationReportButton" type="button">Resumo diretoria</button>
-        </div>
         <div class="termination-filters filter-popover" id="terminationFilterPanel" role="dialog" aria-modal="false" aria-labelledby="terminationFilterTitle" hidden>
           <div class="filter-popover-header">
             <div>
@@ -376,21 +373,7 @@
       </section>
 
       <section class="tab-panel" id="healthPanel" role="region" aria-labelledby="healthTab">
-        <div class="section-header split">
-          <div>
-            <p class="eyebrow">Governança da informação</p>
-            <h2>Saúde dos dados</h2>
-            <p class="section-description">Alertas que podem afetar indicadores, vínculos históricos e decisões operacionais.</p>
-          </div>
-          <span id="healthUpdatedAt"></span>
-        </div>
         <div class="health-overview">
-          <article class="health-score-card">
-            <span>Índice de saúde</span>
-            <strong id="healthScore">100%</strong>
-            <div class="health-score-track"><div id="healthScoreFill"></div></div>
-            <small id="healthScoreLabel">Base consistente</small>
-          </article>
           <div class="metrics-row health-metrics" id="healthKpis" aria-live="polite"></div>
         </div>
         <div class="health-alerts" id="healthAlerts" aria-live="polite"></div>
@@ -639,6 +622,7 @@
   <dialog id="terminateDialog" class="modal" aria-labelledby="terminateDialogTitle" aria-describedby="terminateDialogDescription">
     <form method="dialog" id="terminateForm">
       <h2 id="terminateDialogTitle">Confirmar distrato</h2>
+      <button class="modal-close-button" id="closeTerminateDialogButton" type="button" aria-label="Fechar">×</button>
       <p class="modal-alert" id="terminateDialogDescription">Esta operação removerá o contrato dos indicadores ativos.</p>
       <label id="terminationContractField" hidden>
         Contrato
@@ -776,6 +760,7 @@
   <dialog id="simulationDialog" class="modal simulation-modal" aria-labelledby="simulationDialogTitle" aria-describedby="simulationDialogDescription">
     <form method="dialog" id="simulationForm">
       <h2 id="simulationDialogTitle">Simulação de rescisão</h2>
+      <button class="modal-close-button" id="closeSimulationDialogButton" type="button" aria-label="Fechar">×</button>
       <p class="modal-alert neutral-alert" id="simulationDialogDescription">Pesquise e selecione um contrato para preencher os valores. Depois da seleção, os campos continuam editáveis para correções.</p>
       <label>
         Buscar contrato

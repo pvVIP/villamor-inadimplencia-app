@@ -25,7 +25,7 @@ import {
 
 const db = createDataProvider();
 const NAVIGATION_STORAGE_KEY = "pos-venda-vip-navigation-collapsed";
-const APP_VERSION = "2026.06.26.1";
+const APP_VERSION = "2026.06.26.2";
 const state = {
   contracts: [],
   terminated: [],
@@ -67,6 +67,7 @@ const state = {
   healthAlerts: [],
   activeHealthAlert: null,
   healthAlertQuery: "",
+  healthFilter: "all",
   accessUsers: [],
   accessSummary: { pending: 0, active: 0, suspended: 0, rejected: 0 },
   accessUsersLoaded: false,
@@ -395,12 +396,14 @@ function bindEvents() {
     input.addEventListener("blur", formatMoneyInput);
   });
   document.getElementById("applyTerminationCalculatorButton").addEventListener("click", applyTerminationCalculatorToFinancialFields);
+  document.getElementById("closeTerminateDialogButton").addEventListener("click", cancelTermination);
   document.getElementById("simulateTerminationButton").addEventListener("click", openTerminationSimulation);
   document.getElementById("simulationContractSearch").addEventListener("input", renderSimulationContractResults);
   document.getElementById("simulationContractSearch").addEventListener("focus", renderSimulationContractResults);
   document.getElementById("simulationContractSearch").addEventListener("keydown", handleSimulationContractSearchKeydown);
   document.getElementById("simulationContractResults").addEventListener("click", handleSimulationContractResultClick);
   document.getElementById("cancelSimulationButton").addEventListener("click", closeSimulationDialog);
+  document.getElementById("closeSimulationDialogButton").addEventListener("click", closeSimulationDialog);
   document.getElementById("simulationForm").addEventListener("keydown", (event) => {
     if (event.key === "Enter" && event.target.matches("input")) event.preventDefault();
   });
@@ -429,7 +432,6 @@ function bindEvents() {
   document.getElementById("operationalKpis").addEventListener("click", handleExecutiveMetricAction);
   document.getElementById("newTerminationButton").addEventListener("click", openTerminationFromHub);
   document.getElementById("formalTerminationReportButton").addEventListener("click", () => printTerminationReport("formal"));
-  document.getElementById("executiveTerminationReportButton").addEventListener("click", () => printTerminationReport("executive"));
   document.getElementById("clearTerminationFiltersButton").addEventListener("click", clearTerminationFilters);
   ["terminationSearch", "terminationReasonFilter", "terminationApproachFilter", "terminationOriginFilter", "terminationStartDate", "terminationEndDate"]
     .forEach((id) => document.getElementById(id).addEventListener("input", () => {
@@ -442,6 +444,8 @@ function bindEvents() {
   document.getElementById("cancelProfileButton").addEventListener("click", closeProfileDialog);
   document.getElementById("profileAvatarInput").addEventListener("change", handleProfileAvatar);
   document.getElementById("healthAlerts").addEventListener("click", handleHealthAlertClick);
+  document.getElementById("healthKpis").addEventListener("click", handleHealthKpiFilter);
+  document.addEventListener("click", handleHealthOutsideClick);
   document.getElementById("healthAlertSearch").addEventListener("input", (event) => {
     state.healthAlertQuery = event.target.value;
     renderHealthAlertRecords();
@@ -1887,6 +1891,7 @@ function renderTerminationContractSummary() {
     return;
   }
   summary.hidden = false;
+  const appreciation = contractAppreciation(contract);
   summary.innerHTML = `
     <strong>${escapeHtml(contract.primaryClient || "Cliente não informado")}</strong>
     <span>Contrato ${escapeHtml(contractDisplayCode(contract))} · Localizador ${escapeHtml(contractLocalizer(contract))}</span>
@@ -1923,15 +1928,15 @@ function updateTerminationFinancialWarning() {
   const refundValue = document.getElementById("hasRefund").checked
     ? toNumber(document.getElementById("refundValue").value)
     : 0;
-  const informedTotal = retainedValue + refundValue;
-  const integralized = Math.max(0, toNumber(contract.effectivePaidValue));
-  const excess = informedTotal - integralized;
-  if (excess <= 0) {
+  const informedTotalCents = toCurrencyCents(retainedValue) + toCurrencyCents(refundValue);
+  const integralizedCents = toCurrencyCents(Math.max(0, toNumber(contract.effectivePaidValue)));
+  const excessCents = informedTotalCents - integralizedCents;
+  if (excessCents <= 0) {
     warning.hidden = true;
     return;
   }
   document.getElementById("terminationFinancialWarningText").textContent =
-    `Retenção + reembolso somam ${formatCurrency(informedTotal)}, superando o integralizado de ${formatCurrency(integralized)} em ${formatCurrency(excess)}.`;
+    `Retenção + reembolso somam ${formatCurrency(fromCurrencyCents(informedTotalCents))}, superando o integralizado de ${formatCurrency(fromCurrencyCents(integralizedCents))} em ${formatCurrency(fromCurrencyCents(excessCents))}.`;
   warning.hidden = false;
 }
 
@@ -2080,25 +2085,33 @@ function readRescissionScenario(prefix) {
 }
 
 function calculateRescissionScenario(values) {
-  const contractValue = Math.max(0, toNumber(values.contractValue));
-  const paidValue = Math.max(0, toNumber(values.paidValue));
-  const giftValue = Math.max(0, toNumber(values.giftValue));
-  const brokerageValue = contractValue * 0.06;
-  const penaltyValue = paidValue * 0.5;
-  const totalDeductions = brokerageValue + penaltyValue + giftValue;
-  const netResult = paidValue - totalDeductions;
+  const contractCents = toCurrencyCents(Math.max(0, toNumber(values.contractValue)));
+  const paidCents = toCurrencyCents(Math.max(0, toNumber(values.paidValue)));
+  const giftCents = toCurrencyCents(Math.max(0, toNumber(values.giftValue)));
+  const brokerageCents = Math.round(contractCents * 0.06);
+  const penaltyCents = Math.round(paidCents * 0.5);
+  const totalDeductionsCents = brokerageCents + penaltyCents + giftCents;
+  const netResultCents = paidCents - totalDeductionsCents;
   return {
-    contractValue,
-    paidValue,
-    brokerageValue,
-    penaltyValue,
-    giftValue,
-    totalDeductions,
-    netResult,
-    outcomeLabel: netResult >= 0 ? "Reembolso estimado" : "Saldo devedor estimado",
-    outcomeValue: Math.abs(netResult),
-    outcomeTone: netResult >= 0 ? "refund" : "debt",
+    contractValue: fromCurrencyCents(contractCents),
+    paidValue: fromCurrencyCents(paidCents),
+    brokerageValue: fromCurrencyCents(brokerageCents),
+    penaltyValue: fromCurrencyCents(penaltyCents),
+    giftValue: fromCurrencyCents(giftCents),
+    totalDeductions: fromCurrencyCents(totalDeductionsCents),
+    netResult: fromCurrencyCents(netResultCents),
+    outcomeLabel: netResultCents >= 0 ? "Reembolso estimado" : "Saldo devedor estimado",
+    outcomeValue: fromCurrencyCents(Math.abs(netResultCents)),
+    outcomeTone: netResultCents >= 0 ? "refund" : "debt",
   };
+}
+
+function toCurrencyCents(value) {
+  return Math.round(toNumber(value) * 100 + Number.EPSILON);
+}
+
+function fromCurrencyCents(cents) {
+  return cents / 100;
 }
 
 function renderTerminationCalculator() {
@@ -2598,6 +2611,7 @@ function renderReversions() {
 function renderDataHealth() {
   const alerts = buildDataHealthAlerts();
   state.healthAlerts = alerts;
+  if (!["all", "critical", "warning", "info", "exceptions"].includes(state.healthFilter)) state.healthFilter = "all";
   const critical = alerts.filter((alert) => alert.level === "critical");
   const warnings = alerts.filter((alert) => alert.level === "warning");
   const informative = alerts.filter((alert) => alert.level === "info");
@@ -2611,20 +2625,16 @@ function renderDataHealth() {
   }, 0);
   const score = Math.max(0, Math.round(100 - (impact / totalRecords) * 100));
   const scoreLabel = score >= 90 ? "Base saudável" : score >= 75 ? "Atenção moderada" : score >= 55 ? "Revisão recomendada" : "Risco elevado";
+  const displayedAlerts = filterHealthAlerts(alerts);
 
-  document.getElementById("healthUpdatedAt").textContent = `Analisado em ${formatDate(new Date().toISOString())}`;
-  document.getElementById("healthScore").textContent = `${score}%`;
-  document.getElementById("healthScoreLabel").textContent = scoreLabel;
-  const scoreFill = document.getElementById("healthScoreFill");
-  scoreFill.style.width = `${score}%`;
-  scoreFill.dataset.level = score >= 90 ? "good" : score >= 75 ? "attention" : "risk";
   document.getElementById("healthKpis").innerHTML = [
-    metric("Críticos", critical.length, `${critical.reduce((total, item) => total + item.count, 0)} registros afetados`, critical.length ? "danger" : "success"),
-    metric("Atenção", warnings.length, `${warnings.reduce((total, item) => total + item.count, 0)} registros afetados`, warnings.length ? "warning" : "success"),
-    metric("Informativos", informative.length, "Oportunidades de melhoria"),
-    metric("Exceções", state.sourceExceptions.length, "Status não classificado", state.sourceExceptions.length ? "danger" : "success"),
+    healthMetric("Índice de Saúde", `${score}%`, `${scoreLabel} · Analisado em ${formatDate(new Date().toISOString())}`, score >= 90 ? "success" : score >= 75 ? "warning" : "danger", "all", state.healthFilter === "all", { score }),
+    healthMetric("Críticos", critical.length, `${critical.reduce((total, item) => total + item.count, 0)} registros afetados`, critical.length ? "danger" : "success", "critical", state.healthFilter === "critical"),
+    healthMetric("Atenção", warnings.length, `${warnings.reduce((total, item) => total + item.count, 0)} registros afetados`, warnings.length ? "warning" : "success", "warning", state.healthFilter === "warning"),
+    healthMetric("Informativos", informative.length, "Oportunidades de melhoria", "brand", "info", state.healthFilter === "info"),
+    healthMetric("Exceções", state.sourceExceptions.length, "Status não classificado", state.sourceExceptions.length ? "danger" : "success", "exceptions", state.healthFilter === "exceptions"),
   ].join("");
-  document.getElementById("healthAlerts").innerHTML = alerts.map((alert) => `
+  document.getElementById("healthAlerts").innerHTML = displayedAlerts.map((alert) => `
     <button type="button" class="health-alert health-alert-${alert.level}" data-health-alert-id="${escapeHtml(alert.id)}">
       <div class="health-alert-marker">${alert.level === "critical" ? "!" : alert.level === "warning" ? "△" : "i"}</div>
       <div>
@@ -2637,12 +2647,45 @@ function renderDataHealth() {
         <span class="health-alert-open">Visualizar registros</span>
       </div>
     </button>
-  `).join("") || `
+  `).join("") || (alerts.length ? `
+    <article class="health-alert health-alert-success">
+      <div class="health-alert-marker">✓</div>
+      <div><strong>Nenhum alerta nesta categoria</strong><p>Clique fora dos cards para voltar à visão completa.</p></div>
+    </article>
+  ` : `
     <article class="health-alert health-alert-success">
       <div class="health-alert-marker">✓</div>
       <div><strong>Nenhum alerta relevante</strong><p>A estrutura atual está consistente com as regras de negócio configuradas.</p></div>
     </article>
+  `);
+}
+
+function healthMetric(label, value, helper, tone, filter, pressed, options = {}) {
+  const toneClass = tone ? ` metric-card-${tone}` : "";
+  const scoreTrack = Number.isFinite(options.score)
+    ? `<div class="health-score-track"><div data-level="${options.score >= 90 ? "good" : options.score >= 75 ? "attention" : "risk"}" style="width:${Math.max(0, Math.min(100, options.score))}%"></div></div>`
+    : "";
+  return `
+    <button
+      type="button"
+      class="metric-card health-filter-card${toneClass}"
+      data-health-filter="${escapeAttr(filter)}"
+      aria-pressed="${pressed}"
+    >
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(String(value))}</strong>
+      ${scoreTrack}
+      <small>${escapeHtml(helper)}</small>
+    </button>
   `;
+}
+
+function filterHealthAlerts(alerts) {
+  if (state.healthFilter === "all") return alerts;
+  if (state.healthFilter === "exceptions") {
+    return alerts.filter((alert) => alert.records.some((record) => record.area === "Exceções"));
+  }
+  return alerts.filter((alert) => alert.level === state.healthFilter);
 }
 
 function buildDataHealthAlerts() {
@@ -2987,6 +3030,21 @@ function handleHealthAlertClick(event) {
   const trigger = event.target.closest("[data-health-alert-id]");
   if (!trigger) return;
   openHealthAlertDetails(trigger.dataset.healthAlertId);
+}
+
+function handleHealthKpiFilter(event) {
+  const trigger = event.target.closest("[data-health-filter]");
+  if (!trigger) return;
+  const nextFilter = trigger.dataset.healthFilter || "all";
+  state.healthFilter = state.healthFilter === nextFilter && nextFilter !== "all" ? "all" : nextFilter;
+  renderDataHealth();
+}
+
+function handleHealthOutsideClick(event) {
+  if ((document.body.dataset.activeTab || "operational") !== "health" || state.healthFilter === "all") return;
+  if (event.target.closest("button, a, input, select, textarea, label, dialog, [role='button']")) return;
+  state.healthFilter = "all";
+  renderDataHealth();
 }
 
 function openHealthAlertDetails(alertId) {
@@ -3741,10 +3799,8 @@ function printTerminationReport(type) {
   reportWindow.opener = null;
   const filterSummary = terminationFilterSummary();
   const logoUrl = new URL("assets/shortcut-logo.png", window.location.href).href;
-  const title = type === "formal" ? "Relatório de Distratos" : "Resumo Executivo de Distratos";
-  const body = type === "formal"
-    ? formalTerminationReportMarkup(contracts, totals)
-    : executiveTerminationReportMarkup(contracts, totals);
+  const title = "Relatório de Distratos";
+  const body = formalTerminationReportMarkup(contracts, totals);
   reportWindow.document.write(`<!doctype html>
     <html lang="pt-BR">
       <head>
@@ -3787,36 +3843,6 @@ function formalTerminationReportMarkup(contracts, totals) {
       </tbody>
     </table>
     ${reportBreakdowns(contracts)}
-  `;
-}
-
-function executiveTerminationReportMarkup(contracts, totals) {
-  const reasons = countTerminationValues(contracts, (item) => item.terminationReason || "Não informado");
-  const approaches = countTerminationValues(contracts, (item) => approachLabel(item.terminationApproach));
-  const largestRetention = contracts
-    .filter((item) => item.hasRetention)
-    .sort((a, b) => toNumber(b.retainedValue) - toNumber(a.retainedValue))[0];
-  const receptive = contracts.filter((item) => item.terminationApproach === "receptiva").length;
-  return `
-    <section class="hero-summary">
-      <div><span>VISÃO DO PERÍODO</span><h2>${totals.count} distratos acompanhados</h2><p>${formatPercent(contracts.length ? receptive / contracts.length : 0)} tiveram origem receptiva.</p></div>
-      <strong>${escapeHtml(formatCurrency(totals.retained))}<small>recuperado por retenção</small></strong>
-    </section>
-    <section class="summary-grid executive">
-      ${reportMetric("Distratos", totals.count, "closed")}
-      ${reportMetric("Recuperado", formatCurrency(totals.retained), "recovered")}
-      ${reportMetric("Reembolsado", formatCurrency(totals.refunded), "refund")}
-    </section>
-    <section class="report-columns">
-      <article><h3>Principais motivos</h3>${reportBars(reasons, contracts.length)}</article>
-      <article><h3>Origem da abordagem</h3>${reportBars(approaches, contracts.length)}</article>
-    </section>
-    <section class="attention-box">
-      <h3>Destaques do período</h3>
-      <p>Motivo mais recorrente: <strong>${escapeHtml(reasons[0]?.[0] || "Não informado")}</strong>, com ${reasons[0]?.[1] || 0} registros.</p>
-      <p>Maior retenção registrada: <strong>${escapeHtml(largestRetention ? formatCurrency(largestRetention.retainedValue) : "Não houve")}</strong>${largestRetention ? ` no contrato ${escapeHtml(contractDisplayCode(largestRetention))}.` : "."}</p>
-      <p>Ponto de atenção: ${totals.refunded > totals.retained ? "o total reembolsado supera o recuperado por retenções." : "o recuperado por retenções é igual ou superior aos reembolsos do período."}</p>
-    </section>
   `;
 }
 
